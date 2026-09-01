@@ -35,7 +35,7 @@ function usage() {
   echo "Usage: $0 [options]"
   echo "Options:"
   echo "  --revoke-gke-node-permissions         Revoke GKE nodes permission to pull images"
-  echo "  --delete-iam-policy-bindings          Delete IAM policy bindings for atelet"
+  echo "  --delete-iam-policy-bindings          Delete bucket IAM policy bindings for atelet and ate-api-server"
   echo "  --delete-snapshot-bucket              Delete snapshot bucket"
   echo "  --delete-gvisor-node-pool             Delete gVisor node pool"
   echo "  --delete-cluster                      Delete GKE cluster"
@@ -63,14 +63,16 @@ revoke_gke_node_permissions() {
 # Delete IAM Policy Bindings for Bucket (Reverse of create_iam_policy_bindings)
 delete_iam_policy_bindings() {
   echo "Deleting IAM policy bindings for bucket..."
-  gcloud storage buckets remove-iam-policy-binding "gs://${BUCKET_NAME}" \
-    --member="principal://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${PROJECT_ID}.svc.id.goog/subject/ns/ate-system/sa/atelet" \
-    --role="roles/storage.objectAdmin" \
-    --quiet || true
-  gcloud storage buckets remove-iam-policy-binding "gs://${BUCKET_NAME}" \
-    --member="principal://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${PROJECT_ID}.svc.id.goog/subject/ns/ate-system/sa/atelet" \
-    --role="roles/storage.bucketViewer" \
-    --quiet || true
+  local wi="principal://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${PROJECT_ID}.svc.id.goog/subject/ns/ate-system/sa"
+  local subject role
+  for subject in atelet ate-api-server; do
+    for role in roles/storage.objectAdmin roles/storage.bucketViewer; do
+      gcloud storage buckets remove-iam-policy-binding "gs://${BUCKET_NAME}" \
+        --member="${wi}/${subject}" \
+        --role="${role}" \
+        --quiet || true
+    done
+  done
 }
 
 # Delete Snapshot Bucket (Reverse of create_snapshot_bucket)
