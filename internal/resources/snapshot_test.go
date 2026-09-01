@@ -15,6 +15,7 @@
 package resources
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -66,6 +67,64 @@ func TestNewSnapshotURI(t *testing.T) {
 				t.Errorf("NewSnapshotURI(%q, %q, %q) returned %q alongside an error, want the zero value", tc.location, tc.atespace, tc.snapshot, got)
 			}
 		})
+	}
+}
+
+func TestNewSnapshotURIForTag(t *testing.T) {
+	tests := []struct {
+		name     string
+		location string
+		atespace string
+		tag      string
+		want     string
+		wantErr  bool
+	}{
+		{
+			name: "prefixes the tag name", location: "gs://bucket/root", atespace: "team-a", tag: "release",
+			want: "gs://bucket/root/snapshots/team-a/tag-release",
+		},
+		{
+			name: "a tag named like a UUID is still prefixed", location: "gs://bucket/root", atespace: "team-a",
+			tag:  "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+			want: "gs://bucket/root/snapshots/team-a/tag-f47ac10b-58cc-4372-a567-0e02b2c3d479",
+		},
+		{
+			name: "a tag already starting with the prefix is prefixed again", location: "gs://bucket/root", atespace: "team-a",
+			tag:  "tag-release",
+			want: "gs://bucket/root/snapshots/team-a/tag-tag-release",
+		},
+		{name: "empty tag name", location: "gs://bucket/root", atespace: "team-a", tag: "", wantErr: true},
+		{name: "invalid tag name", location: "gs://bucket/root", atespace: "team-a", tag: "Release_1", wantErr: true},
+		{
+			name: "a tag long enough to overflow the resource name limit", location: "gs://bucket/root", atespace: "team-a",
+			tag: strings.Repeat("a", 60), wantErr: true,
+		},
+		{name: "invalid location", location: "/root", atespace: "team-a", tag: "release", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NewSnapshotURIForTag(tc.location, tc.atespace, tc.tag)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("NewSnapshotURIForTag(%q, %q, %q) error = %v, wantErr %t", tc.location, tc.atespace, tc.tag, err, tc.wantErr)
+			}
+			if got.String() != tc.want {
+				t.Errorf("NewSnapshotURIForTag(%q, %q, %q) = %q, want %q", tc.location, tc.atespace, tc.tag, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSnapshotNameForTagNeverCollidesWithAnActor guards the invariant the
+// tag prefix exists for: an actor's snapshot name is a UUID, so it can never
+// be handed a name a tag owns.
+func TestSnapshotNameForTagNeverCollidesWithAnActor(t *testing.T) {
+	for range 100 {
+		if name := NewSnapshotName(); strings.HasPrefix(name, tagSnapshotPrefix) {
+			t.Fatalf("NewSnapshotName() = %q, which collides with the tag snapshot namespace %q", name, tagSnapshotPrefix)
+		}
+	}
+	if got, want := SnapshotNameForTag("release"), "tag-release"; got != want {
+		t.Errorf("SnapshotNameForTag(%q) = %q, want %q", "release", got, want)
 	}
 }
 

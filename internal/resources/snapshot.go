@@ -62,6 +62,30 @@ func NewSnapshotURI(location, atespace, name string) (SnapshotURI, error) {
 	return SnapshotURI{uri: uri, location: location, atespace: atespace, name: name}, nil
 }
 
+// tagSnapshotPrefix separates the snapshots ActorSnapshotTags own from the
+// ones actors own. Actor snapshots are named by NewSnapshotName, which returns
+// a UUID, so no actor can ever be handed a name a tag holds.
+const tagSnapshotPrefix = "tag-"
+
+// SnapshotNameForTag returns the name of the snapshot the named
+// ActorSnapshotTag owns. It is derived from the tag name alone, so every
+// attempt at one suspend-with-tag copies to the same place.
+func SnapshotNameForTag(tagName string) string {
+	return tagSnapshotPrefix + tagName
+}
+
+// NewSnapshotURIForTag returns the URI of the snapshot owned by the named
+// ActorSnapshotTag in a given atespace, under an ActorTemplate's
+// snapshotsConfig.location.
+//
+// The tag name is bounded len(tagSnapshotPrefix) below the resource name limit
+// so that the prefixed result is still a valid one; SuspendActorRequest.tag
+// enforces that at validation, rather than here, halfway through a suspend
+// that has already checkpointed.
+func NewSnapshotURIForTag(location, atespace, tagName string) (SnapshotURI, error) {
+	return NewSnapshotURI(location, atespace, SnapshotNameForTag(tagName))
+}
+
 // ParseSnapshotURI parses a given snapshot URI.
 func ParseSnapshotURI(uri string) (SnapshotURI, error) {
 	u, err := url.Parse(uri)
