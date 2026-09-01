@@ -32,6 +32,7 @@ import (
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store/atepg"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store/dockerenv"
+	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -108,16 +109,22 @@ func MustCreateActor(t *testing.T, ctx context.Context, s store.Interface, actor
 	return created
 }
 
-// MustCreateActorSnapshot ensures snapshot's parent atespace exists, then
-// creates snapshot. Use the store method directly only in tests that exercise
-// missing-parent behavior.
-func MustCreateActorSnapshot(t *testing.T, ctx context.Context, s store.Interface, snapshot *ateapipb.ActorSnapshot) *ateapipb.ActorSnapshot {
+// MustCreateActorSnapshotTag ensures tag's parent atespace exists, then creates
+// tag alongside a no-op update of sourceActor — the only way a tag is born, so
+// that tests reach it the same way a tagged suspend does. Use the store method
+// directly only in tests that exercise the transaction itself.
+func MustCreateActorSnapshotTag(t *testing.T, ctx context.Context, s store.Interface, sourceActor *ateapipb.Actor, tag *ateapipb.ActorSnapshotTag) *ateapipb.ActorSnapshotTag {
 	t.Helper()
-	atespace := snapshot.GetMetadata().GetAtespace()
+	atespace := tag.GetMetadata().GetAtespace()
+	name := tag.GetMetadata().GetName()
 	MustCreateAtespace(t, ctx, s, atespace)
-	created, err := s.CreateActorSnapshot(ctx, snapshot)
+	actorRef := resources.ActorRefFromActor(sourceActor)
+	if _, err := s.UpdateActorAndTag(ctx, actorRef, store.PreconditionFrom(sourceActor), func(*ateapipb.Actor) error { return nil }, tag); err != nil {
+		t.Fatalf("creating test actor snapshot tag %q/%q: %v", atespace, name, err)
+	}
+	created, err := s.GetActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: atespace, Name: name})
 	if err != nil {
-		t.Fatalf("creating test actor snapshot %q/%q: %v", atespace, snapshot.GetMetadata().GetName(), err)
+		t.Fatalf("reading back test actor snapshot tag %q/%q: %v", atespace, name, err)
 	}
 	return created
 }

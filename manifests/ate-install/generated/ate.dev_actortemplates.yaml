@@ -835,7 +835,11 @@ spec:
                 type: array
               goldenActorID:
                 type: string
-              goldenSnapshot:
+              goldenSnapshotURI:
+                description: |-
+                  GoldenSnapshotURI locates the external snapshot the golden actor wrote
+                  in object storage. The golden actor keeps owning those objects; the
+                  template only points at them.
                 type: string
               phase:
                 description: Phase of the actor template.

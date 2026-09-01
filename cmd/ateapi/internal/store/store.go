@@ -114,25 +114,29 @@ type Interface interface {
 	// Deletes and returns an Actor's policy subresource.
 	DeleteEgressPolicy(ctx context.Context, actorRef resources.ActorRef) (*ateapipb.EgressPolicy, error)
 
-	// Creates an immutable ActorSnapshot. The caller sets snapshot_uri; the
-	// store keeps no location of its own.
-	CreateActorSnapshot(ctx context.Context, snapshot *ateapipb.ActorSnapshot) (*ateapipb.ActorSnapshot, error)
-
-	// Fetches an ActorSnapshot by reference. Returns ErrNotFound if missing.
-	GetActorSnapshot(ctx context.Context, snapshotRef resources.ActorSnapshotRef) (*ateapipb.ActorSnapshot, error)
-
-	// Lists ActorSnapshots in one atespace, or all atespaces when empty.
-	ListActorSnapshots(ctx context.Context, atespace string, opts ListOptions) (ListResponse[*ateapipb.ActorSnapshot], error)
-
-	// Adds an immutable Atespace-owned tag to the ActorSnapshot addressed by
-	// snapshotRef. Returns ErrNotFound if the snapshot does not exist, or
-	// ErrFailedPrecondition if the tag's atespace does not exist.
-	CreateActorSnapshotTag(ctx context.Context, snapshotRef resources.ActorSnapshotRef, tag *ateapipb.ActorSnapshotTag) (*ateapipb.ActorSnapshotTag, error)
+	// UpdateActorAndTag applies mutate to the Actor addressed by actorRef
+	// exactly as UpdateActor does and, when tag is non-nil, creates that
+	// ActorSnapshotTag in the same transaction. Either both land or neither
+	// does. A nil tag makes this the same as UpdateActor.
+	//
+	// It exists so that a suspend asked for a tag commits the tag and the
+	// Actor's new snapshot together: a tag must never outlive the suspend that
+	// produced it, and a suspend must never report success having dropped the
+	// tag it was asked for.
+	//
+	// Creating a tag identical to one already stored succeeds and returns the
+	// stored tag, so a retried caller is not defeated by its own earlier
+	// attempt. Returns ErrAlreadyExists if the name is held by a different tag,
+	// or ErrFailedPrecondition if the tag's atespace does not exist. The Actor
+	// errors are UpdateActor's.
+	UpdateActorAndTag(ctx context.Context, actorRef resources.ActorRef, precondition Precondition, mutate func(toUpdate *ateapipb.Actor) error, tag *ateapipb.ActorSnapshotTag) (*ateapipb.Actor, error)
 
 	// Fetches an Atespace-owned tag by reference. Returns ErrNotFound if
-	// missing. The tag's snapshot field names the ActorSnapshot it resolves
-	// to; fetch it with GetActorSnapshot if needed.
+	// missing.
 	GetActorSnapshotTag(ctx context.Context, tagRef resources.ActorSnapshotTagRef) (*ateapipb.ActorSnapshotTag, error)
+
+	// Lists ActorSnapshotTags in one atespace, or all atespaces when empty.
+	ListActorSnapshotTags(ctx context.Context, atespace string, opts ListOptions) (ListResponse[*ateapipb.ActorSnapshotTag], error)
 
 	// UpdateActorSnapshotTag performs a transactional read-modify-write on the tag
 	// addressed by tagRef, and returns the stored ActorSnapshotTag with

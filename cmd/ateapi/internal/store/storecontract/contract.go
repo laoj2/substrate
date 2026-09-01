@@ -156,7 +156,7 @@ func RunContractTests(t *testing.T, setup func(t *testing.T) store.Interface) {
 	runWorkerContractTests(t, setup)
 	runAtespaceContractTests(t, setup)
 	runActorTemplateContractTests(t, setup)
-	runActorSnapshotContractTests(t, setup)
+	runActorSnapshotTagContractTests(t, setup)
 	runLeaseContractTests(t, setup)
 	runListOptionsContractTests(t, setup)
 	runDebugContractTests(t, setup)
@@ -279,7 +279,7 @@ func runListOptionsContractTests(t *testing.T, setup func(t *testing.T) store.In
 			{"atespaces", func(opts store.ListOptions) error { _, err := s.ListAtespaces(ctx, opts); return err }},
 			{"actors", func(opts store.ListOptions) error { _, err := s.ListActors(ctx, "", opts); return err }},
 			{"actor templates", func(opts store.ListOptions) error { _, err := s.ListActorTemplates(ctx, "", opts); return err }},
-			{"actor snapshots", func(opts store.ListOptions) error { _, err := s.ListActorSnapshots(ctx, "", opts); return err }},
+			{"actor snapshot tags", func(opts store.ListOptions) error { _, err := s.ListActorSnapshotTags(ctx, "", opts); return err }},
 			{"workers", func(opts store.ListOptions) error { _, err := s.ListWorkers(ctx, opts); return err }},
 		}
 		for _, call := range calls {
@@ -304,7 +304,7 @@ func runListOptionsContractTests(t *testing.T, setup func(t *testing.T) store.In
 			{"atespaces", func(opts store.ListOptions) error { _, err := s.ListAtespaces(ctx, opts); return err }},
 			{"actors", func(opts store.ListOptions) error { _, err := s.ListActors(ctx, "", opts); return err }},
 			{"actor templates", func(opts store.ListOptions) error { _, err := s.ListActorTemplates(ctx, "", opts); return err }},
-			{"actor snapshots", func(opts store.ListOptions) error { _, err := s.ListActorSnapshots(ctx, "", opts); return err }},
+			{"actor snapshot tags", func(opts store.ListOptions) error { _, err := s.ListActorSnapshotTags(ctx, "", opts); return err }},
 			{"workers", func(opts store.ListOptions) error { _, err := s.ListWorkers(ctx, opts); return err }},
 		}
 		for _, call := range calls {
@@ -722,8 +722,8 @@ func runActorContractTests(t *testing.T, setup func(t *testing.T) store.Interfac
 			ActorTemplateNamespace: "ns1",
 			ActorTemplateName:      "tmpl1",
 			Status: &ateapipb.ActorStatus{
-				State:          ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
-				LatestSnapshot: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "snapshot-1"},
+				State:            ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
+				ExternalSnapshot: &ateapipb.ExternalSnapshot{SnapshotUri: "gs://bucket/snapshots/" + testAtespace + "/snapshot-1"},
 			},
 		}
 		actor2 := &ateapipb.Actor{
@@ -731,8 +731,8 @@ func runActorContractTests(t *testing.T, setup func(t *testing.T) store.Interfac
 			ActorTemplateNamespace: "ns1",
 			ActorTemplateName:      "tmpl1",
 			Status: &ateapipb.ActorStatus{
-				State:          ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
-				LatestSnapshot: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "snapshot-2"},
+				State:            ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
+				ExternalSnapshot: &ateapipb.ExternalSnapshot{SnapshotUri: "gs://bucket/snapshots/" + testAtespace + "/snapshot-2"},
 			},
 		}
 		if _, err := s.CreateActor(ctx, actor1); err != nil {
@@ -942,89 +942,86 @@ func runActorTemplateContractTests(t *testing.T, setup func(t *testing.T) store.
 	})
 }
 
-func runActorSnapshotContractTests(t *testing.T, setup func(t *testing.T) store.Interface) {
+// newTestSuspendedActor builds an actor that already holds an external
+// snapshot, the state a tagged suspend tags from.
+func newTestSuspendedActor(atespace, name string) *ateapipb.Actor {
+	return &ateapipb.Actor{
+		Metadata:               &ateapipb.ResourceMetadata{Atespace: atespace, Name: name},
+		ActorTemplateNamespace: "ns1",
+		ActorTemplateName:      "tmpl1",
+		Status: &ateapipb.ActorStatus{
+			State: ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
+			ExternalSnapshot: &ateapipb.ExternalSnapshot{
+				SnapshotUri:  "gs://private/snapshots/" + atespace + "/" + name,
+				ContentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
+			},
+		},
+	}
+}
+
+// newTestActorSnapshotTag builds the tag a suspend of actor would create: born
+// ATESPACE-scoped over the actor's external snapshot.
+func newTestActorSnapshotTag(name string, actor *ateapipb.Actor) *ateapipb.ActorSnapshotTag {
+	return &ateapipb.ActorSnapshotTag{
+		Metadata: &ateapipb.ResourceMetadata{Atespace: actor.GetMetadata().GetAtespace(), Name: name},
+		Scope:    ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_ATESPACE,
+		Status: &ateapipb.ActorSnapshotTagStatus{
+			Snapshot:         proto.CloneOf(actor.GetStatus().GetExternalSnapshot()),
+			ActorTemplateUid: "template-uid",
+		},
+	}
+}
+
+func runActorSnapshotTagContractTests(t *testing.T, setup func(t *testing.T) store.Interface) {
 	t.Helper()
 
-	t.Run("ActorSnapshotAndTag_Lifecycle", func(t *testing.T) {
+	// suspendedActor seeds an atespace and an actor holding an external
+	// snapshot, the precondition every tag test starts from.
+	suspendedActor := func(t *testing.T, s store.Interface, atespace, name string) *ateapipb.Actor {
+		t.Helper()
+		mustCreateAtespace(t, s, atespace)
+		actor, err := s.CreateActor(context.Background(), newTestSuspendedActor(atespace, name))
+		if err != nil {
+			t.Fatalf("CreateActor(%s/%s) failed: %v", atespace, name, err)
+		}
+		return actor
+	}
+
+	t.Run("ActorSnapshotTag_Lifecycle", func(t *testing.T) {
 		s := setup(t)
 		ctx := context.Background()
-		mustCreateAtespace(t, s, "team-a")
+		actor := suspendedActor(t, s, "team-a", "actor-1")
 
-		input := &ateapipb.ActorSnapshot{
-			Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "snapshot-1"},
-			Status: &ateapipb.ActorSnapshotStatus{
-				SourceActor:        &ateapipb.ObjectRef{Atespace: "team-a", Name: "actor-1"},
-				SourceActorUid:     "actor-uid",
-				SourceActorVersion: 7,
-				ContentScope:       ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
-				SnapshotUri:        "gs://private/snapshot-1",
-			},
-		}
-		created, err := s.CreateActorSnapshot(ctx, input)
+		tagInput := newTestActorSnapshotTag("production", actor)
+		suspended, err := s.UpdateActorAndTag(ctx, resources.ActorRefFromActor(actor), store.PreconditionFrom(actor), func(toUpdate *ateapipb.Actor) error {
+			toUpdate.Status.State = ateapipb.ActorState_ACTOR_STATE_SUSPENDED
+			return nil
+		}, tagInput)
 		if err != nil {
-			t.Fatalf("CreateActorSnapshot failed: %v", err)
+			t.Fatalf("UpdateActorAndTag failed: %v", err)
 		}
-		if created.GetMetadata().GetVersion() != 1 || created.GetMetadata().GetUid() == "" {
-			t.Errorf("created snapshot metadata = %v, want server-owned uid and version 1", created.GetMetadata())
+		if suspended.GetMetadata().GetVersion() != actor.GetMetadata().GetVersion()+1 {
+			t.Errorf("finalized actor version = %d, want %d", suspended.GetMetadata().GetVersion(), actor.GetMetadata().GetVersion()+1)
 		}
-		if input.GetMetadata().GetUid() != "" || input.GetMetadata().GetVersion() != 0 {
-			t.Errorf("CreateActorSnapshot mutated its input metadata: %v", input.GetMetadata())
-		}
-		if _, err := s.CreateActorSnapshot(ctx, input); !errors.Is(err, store.ErrAlreadyExists) {
-			t.Errorf("duplicate CreateActorSnapshot = %v, want ErrAlreadyExists", err)
+		if tagInput.GetMetadata().GetUid() != "" || tagInput.GetMetadata().GetVersion() != 0 {
+			t.Errorf("UpdateActorAndTag mutated its tag input metadata: %v", tagInput.GetMetadata())
 		}
 
-		got, err := s.GetActorSnapshot(ctx, resources.ActorSnapshotRef{Atespace: "team-a", Name: "snapshot-1"})
-		if err != nil {
-			t.Fatalf("GetActorSnapshot failed: %v", err)
-		}
-		if diff := cmp.Diff(created, got, protocmp.Transform()); diff != "" {
-			t.Errorf("GetActorSnapshot mismatch (-created +got):\n%s", diff)
-		}
-		if got.GetStatus().GetSnapshotUri() != "gs://private/snapshot-1" {
-			t.Errorf("snapshot_uri = %q, want gs://private/snapshot-1", got.GetStatus().GetSnapshotUri())
-		}
-		if _, err := s.GetActorSnapshot(ctx, resources.ActorSnapshotRef{Atespace: "team-a", Name: "missing"}); !errors.Is(err, store.ErrNotFound) {
-			t.Errorf("missing GetActorSnapshot = %v, want ErrNotFound", err)
-		}
-
-		tagInput := &ateapipb.ActorSnapshotTag{
-			Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "production"},
-			Scope:    ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_ATESPACE,
-		}
-		tag, err := s.CreateActorSnapshotTag(ctx, resources.ActorSnapshotRef{Atespace: "team-a", Name: "snapshot-1"}, tagInput)
-		if err != nil {
-			t.Fatalf("CreateActorSnapshotTag failed: %v", err)
-		}
-		if tag.GetSnapshot().GetAtespace() != "team-a" || tag.GetSnapshot().GetName() != "snapshot-1" {
-			t.Errorf("tag snapshot = %v, want team-a/snapshot-1", tag.GetSnapshot())
-		}
-		if tagInput.GetSnapshot() != nil || tagInput.GetMetadata().GetVersion() != 0 {
-			t.Errorf("CreateActorSnapshotTag mutated its input: %v", tagInput)
-		}
-		idempotent, err := s.CreateActorSnapshotTag(ctx, resources.ActorSnapshotRef{Atespace: "team-a", Name: "snapshot-1"}, tagInput)
-		if err != nil || !proto.Equal(idempotent, tag) {
-			t.Errorf("idempotent CreateActorSnapshotTag = (%v, %v), want existing tag", idempotent, err)
-		}
-		conflicting := proto.Clone(tagInput).(*ateapipb.ActorSnapshotTag)
-		conflicting.Scope = ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_PUBLISHED
-		if _, err := s.CreateActorSnapshotTag(ctx, resources.ActorSnapshotRef{Atespace: "team-a", Name: "snapshot-1"}, conflicting); !errors.Is(err, store.ErrAlreadyExists) {
-			t.Errorf("conflicting CreateActorSnapshotTag = %v, want ErrAlreadyExists", err)
-		}
-		if _, err := s.CreateActorSnapshotTag(ctx, resources.ActorSnapshotRef{Atespace: "team-a", Name: "missing"}, &ateapipb.ActorSnapshotTag{Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "missing"}}); !errors.Is(err, store.ErrNotFound) {
-			t.Errorf("tagging missing snapshot = %v, want ErrNotFound", err)
-		}
-
-		resolvedTag, err := s.GetActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: "team-a", Name: "production"})
+		tag, err := s.GetActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: "team-a", Name: "production"})
 		if err != nil {
 			t.Fatalf("GetActorSnapshotTag failed: %v", err)
 		}
-		if !proto.Equal(resolvedTag, tag) {
-			t.Errorf("resolved tag = %v, want created tag", resolvedTag)
+		if tag.GetMetadata().GetVersion() != 1 || tag.GetMetadata().GetUid() == "" {
+			t.Errorf("created tag metadata = %v, want server-owned uid and version 1", tag.GetMetadata())
 		}
-		resolved, err := s.GetActorSnapshot(ctx, resources.ActorSnapshotRefFromObjectRef(resolvedTag.GetSnapshot()))
-		if err != nil || !proto.Equal(resolved, created) {
-			t.Errorf("GetActorSnapshot(resolved tag target) = (%v, %v), want created snapshot", resolved, err)
+		if !proto.Equal(tag.GetStatus().GetSnapshot(), actor.GetStatus().GetExternalSnapshot()) {
+			t.Errorf("tag snapshot = %v, want %v", tag.GetStatus().GetSnapshot(), actor.GetStatus().GetExternalSnapshot())
+		}
+		if diff := cmp.Diff(tagInput, tag, protocmp.Transform(), ignoreUID, ignoreVersion, ignoreTimestamps); diff != "" {
+			t.Errorf("stored tag mismatch (-want +got):\n%s", diff)
+		}
+		if _, err := s.GetActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: "team-a", Name: "missing"}); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("missing GetActorSnapshotTag = %v, want ErrNotFound", err)
 		}
 
 		updated, err := s.UpdateActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: "team-a", Name: "production"}, store.PreconditionFrom(tag), func(toUpdate *ateapipb.ActorSnapshotTag) error {
@@ -1054,32 +1051,113 @@ func runActorSnapshotContractTests(t *testing.T, setup func(t *testing.T) store.
 		if _, err := s.GetActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: "team-a", Name: "production"}); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("deleted GetActorSnapshotTag = %v, want ErrNotFound", err)
 		}
-		if _, err := s.DeleteAtespace(ctx, "team-a"); err != nil {
-			t.Errorf("DeleteAtespace after tag deletion = %v, want nil", err)
+	})
+
+	t.Run("ActorSnapshotTag_ImmutableFields", func(t *testing.T) {
+		s := setup(t)
+		ctx := context.Background()
+		actor := suspendedActor(t, s, "team-a", "actor-1")
+		tag := storeTag(t, s, actor, newTestActorSnapshotTag("production", actor))
+
+		tests := []struct {
+			name   string
+			mutate func(*ateapipb.ActorSnapshotTag)
+		}{
+			{
+				name: "snapshot uri",
+				mutate: func(toUpdate *ateapipb.ActorSnapshotTag) {
+					toUpdate.Status.Snapshot.SnapshotUri = "gs://private/elsewhere"
+				},
+			},
+			{
+				name: "snapshot content scope",
+				mutate: func(toUpdate *ateapipb.ActorSnapshotTag) {
+					toUpdate.Status.Snapshot.ContentScope = ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA
+				},
+			},
+			{
+				name:   "actor template uid",
+				mutate: func(toUpdate *ateapipb.ActorSnapshotTag) { toUpdate.Status.ActorTemplateUid = "other-template-uid" },
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, err := s.UpdateActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: "team-a", Name: "production"}, store.PreconditionFrom(tag), func(toUpdate *ateapipb.ActorSnapshotTag) error {
+					tt.mutate(toUpdate)
+					return nil
+				})
+				if !errors.Is(err, store.ErrImmutableField) {
+					t.Errorf("UpdateActorSnapshotTag error = %v, want one matching store.ErrImmutableField", err)
+				}
+			})
+		}
+	})
+
+	t.Run("UpdateActorAndTag_ReusedTagName", func(t *testing.T) {
+		s := setup(t)
+		ctx := context.Background()
+		actor := suspendedActor(t, s, "team-a", "actor-1")
+		tagInput := newTestActorSnapshotTag("production", actor)
+		suspended, err := s.UpdateActorAndTag(ctx, resources.ActorRefFromActor(actor), store.PreconditionFrom(actor), func(*ateapipb.Actor) error { return nil }, tagInput)
+		if err != nil {
+			t.Fatalf("UpdateActorAndTag failed: %v", err)
+		}
+
+		// A client retrying the same suspend must not be defeated by the tag
+		// its own earlier attempt wrote.
+		retried, err := s.UpdateActorAndTag(ctx, resources.ActorRefFromActor(actor), store.PreconditionFrom(suspended), func(*ateapipb.Actor) error { return nil }, tagInput)
+		if err != nil {
+			t.Fatalf("retried UpdateActorAndTag = %v, want success", err)
+		}
+
+		// A different tag of the same name is a genuine collision: tags never
+		// move once created.
+		conflicting := proto.Clone(tagInput).(*ateapipb.ActorSnapshotTag)
+		conflicting.Status.Snapshot = &ateapipb.ExternalSnapshot{SnapshotUri: "gs://private/snapshots/team-a/elsewhere"}
+		if _, err := s.UpdateActorAndTag(ctx, resources.ActorRefFromActor(actor), store.PreconditionFrom(retried), func(*ateapipb.Actor) error { return nil }, conflicting); !errors.Is(err, store.ErrAlreadyExists) {
+			t.Errorf("conflicting tag = %v, want ErrAlreadyExists", err)
+		}
+
+		// The rejected attempt must not have advanced the actor either.
+		stored, err := s.GetActor(ctx, resources.ActorRefFromActor(actor))
+		if err != nil {
+			t.Fatalf("GetActor failed: %v", err)
+		}
+		if stored.GetMetadata().GetVersion() != retried.GetMetadata().GetVersion() {
+			t.Errorf("actor version after rejected tag = %d, want %d (rolled back)", stored.GetMetadata().GetVersion(), retried.GetMetadata().GetVersion())
+		}
+	})
+
+	t.Run("UpdateActorAndTag_NoTag", func(t *testing.T) {
+		s := setup(t)
+		ctx := context.Background()
+		actor := suspendedActor(t, s, "team-a", "actor-1")
+
+		suspended, err := s.UpdateActorAndTag(ctx, resources.ActorRefFromActor(actor), store.PreconditionFrom(actor), func(toUpdate *ateapipb.Actor) error {
+			toUpdate.Status.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: "gs://private/snapshots/team-a/actor-1-v2"}
+			return nil
+		}, nil)
+		if err != nil {
+			t.Fatalf("UpdateActorAndTag failed: %v", err)
+		}
+		if suspended.GetStatus().GetExternalSnapshot().GetSnapshotUri() != "gs://private/snapshots/team-a/actor-1-v2" {
+			t.Errorf("finalized actor snapshot uri = %q, want the mutated one", suspended.GetStatus().GetExternalSnapshot().GetSnapshotUri())
+		}
+		page, err := s.ListActorSnapshotTags(ctx, "team-a", store.ListOptions{PageSize: 10})
+		if err != nil {
+			t.Fatalf("ListActorSnapshotTags failed: %v", err)
+		}
+		if len(page.Items) != 0 {
+			t.Errorf("untagged suspend created %d tags, want 0", len(page.Items))
 		}
 	})
 
 	t.Run("UpdateActorSnapshotTag_MissingPrecondition", func(t *testing.T) {
 		s := setup(t)
 		ctx := context.Background()
-		mustCreateAtespace(t, s, "team-a")
-
-		if _, err := s.CreateActorSnapshot(ctx, &ateapipb.ActorSnapshot{
-			Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "snapshot-1"},
-			Status: &ateapipb.ActorSnapshotStatus{
-				SourceActor: &ateapipb.ObjectRef{Atespace: "team-a", Name: "actor-1"},
-				SnapshotUri: "gs://private/snapshot-1",
-			},
-		}); err != nil {
-			t.Fatalf("CreateActorSnapshot failed: %v", err)
-		}
-		created, err := s.CreateActorSnapshotTag(ctx, resources.ActorSnapshotRef{Atespace: "team-a", Name: "snapshot-1"}, &ateapipb.ActorSnapshotTag{
-			Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "production"},
-			Scope:    ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_ATESPACE,
-		})
-		if err != nil {
-			t.Fatalf("CreateActorSnapshotTag failed: %v", err)
-		}
+		actor := suspendedActor(t, s, "team-a", "actor-1")
+		created := storeTag(t, s, actor, newTestActorSnapshotTag("production", actor))
 
 		tests := []struct {
 			name         string
@@ -1112,26 +1190,22 @@ func runActorSnapshotContractTests(t *testing.T, setup func(t *testing.T) store.
 		}
 	})
 
-	t.Run("ListActorSnapshots_PaginationAndScope", func(t *testing.T) {
+	t.Run("ListActorSnapshotTags_PaginationAndScope", func(t *testing.T) {
 		s := setup(t)
 		ctx := context.Background()
 		for _, atespace := range []string{"team-a", "team-b"} {
+			actor := suspendedActor(t, s, atespace, "actor-1")
 			for i := 0; i < 3; i++ {
-				name := fmt.Sprintf("snapshot-%d", i)
-				if _, err := s.CreateActorSnapshot(ctx, &ateapipb.ActorSnapshot{
-					Metadata: &ateapipb.ResourceMetadata{Atespace: atespace, Name: name},
-					Status:   &ateapipb.ActorSnapshotStatus{SnapshotUri: "gs://private/" + atespace + "/" + name},
-				}); err != nil {
-					t.Fatalf("CreateActorSnapshot(%s/%s) failed: %v", atespace, name, err)
-				}
+				tag := newTestActorSnapshotTag(fmt.Sprintf("tag-%d", i), actor)
+				actor = mustFinalize(t, s, actor, tag)
 			}
 		}
 
-		var scoped []*ateapipb.ActorSnapshot
+		var scoped []*ateapipb.ActorSnapshotTag
 		for token := ""; ; {
-			page, err := s.ListActorSnapshots(ctx, "team-a", store.ListOptions{PageSize: 2, PageToken: token})
+			page, err := s.ListActorSnapshotTags(ctx, "team-a", store.ListOptions{PageSize: 2, PageToken: token})
 			if err != nil {
-				t.Fatalf("scoped ListActorSnapshots failed: %v", err)
+				t.Fatalf("scoped ListActorSnapshotTags failed: %v", err)
 			}
 			scoped = append(scoped, page.Items...)
 			if page.NextPageToken == "" {
@@ -1140,14 +1214,14 @@ func runActorSnapshotContractTests(t *testing.T, setup func(t *testing.T) store.
 			token = page.NextPageToken
 		}
 		if len(scoped) != 3 {
-			t.Errorf("scoped ListActorSnapshots returned %d snapshots, want 3", len(scoped))
+			t.Errorf("scoped ListActorSnapshotTags returned %d tags, want 3", len(scoped))
 		}
 
-		var global []*ateapipb.ActorSnapshot
+		var global []*ateapipb.ActorSnapshotTag
 		for token := ""; ; {
-			page, err := s.ListActorSnapshots(ctx, "", store.ListOptions{PageSize: 2, PageToken: token})
+			page, err := s.ListActorSnapshotTags(ctx, "", store.ListOptions{PageSize: 2, PageToken: token})
 			if err != nil {
-				t.Fatalf("global ListActorSnapshots failed: %v", err)
+				t.Fatalf("global ListActorSnapshotTags failed: %v", err)
 			}
 			global = append(global, page.Items...)
 			if page.NextPageToken == "" {
@@ -1156,9 +1230,35 @@ func runActorSnapshotContractTests(t *testing.T, setup func(t *testing.T) store.
 			token = page.NextPageToken
 		}
 		if len(global) != 6 {
-			t.Errorf("global ListActorSnapshots returned %d snapshots, want 6", len(global))
+			t.Errorf("global ListActorSnapshotTags returned %d tags, want 6", len(global))
 		}
 	})
+}
+
+// mustFinalize runs a tagged suspend of actor and returns the finalized actor,
+// whose version the next finalize needs as its precondition.
+func mustFinalize(t *testing.T, s store.Interface, actor *ateapipb.Actor, tag *ateapipb.ActorSnapshotTag) *ateapipb.Actor {
+	t.Helper()
+	suspended, err := s.UpdateActorAndTag(context.Background(), resources.ActorRefFromActor(actor), store.PreconditionFrom(actor), func(*ateapipb.Actor) error { return nil }, tag)
+	if err != nil {
+		t.Fatalf("UpdateActorAndTag(tag %q) failed: %v", tag.GetMetadata().GetName(), err)
+	}
+	return suspended
+}
+
+// storeTag creates tag through a tagged suspend of actor and reads it back, for
+// tests whose subject is the stored tag rather than the suspend.
+func storeTag(t *testing.T, s store.Interface, actor *ateapipb.Actor, tag *ateapipb.ActorSnapshotTag) *ateapipb.ActorSnapshotTag {
+	t.Helper()
+	mustFinalize(t, s, actor, tag)
+	stored, err := s.GetActorSnapshotTag(context.Background(), resources.ActorSnapshotTagRef{
+		Atespace: tag.GetMetadata().GetAtespace(),
+		Name:     tag.GetMetadata().GetName(),
+	})
+	if err != nil {
+		t.Fatalf("GetActorSnapshotTag(%q) failed: %v", tag.GetMetadata().GetName(), err)
+	}
+	return stored
 }
 
 func runWorkerContractTests(t *testing.T, setup func(t *testing.T) store.Interface) {

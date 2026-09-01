@@ -21,11 +21,14 @@ import (
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store/storetest"
+	"github.com/agent-substrate/substrate/internal/objectstore/objectstoretest"
 	"github.com/agent-substrate/substrate/internal/resources"
 	atev1alpha1 "github.com/agent-substrate/substrate/pkg/api/v1alpha1"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -72,9 +75,8 @@ func TestEnsureMarkedSuspending_ReentryKeepsPersistedSnapshotLocation(t *testing
 	actor := storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
 		Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "actor-1"},
 		Status: &ateapipb.ActorStatus{
-			State:                                ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
-			InProgressSnapshotName:               "first-attempt",
-			InProgressSnapshotSourceActorVersion: 7,
+			State:                  ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
+			InProgressSnapshotName: "first-attempt",
 		},
 	})
 	w := &ActorWorkflow{store: persistence}
@@ -84,9 +86,6 @@ func TestEnsureMarkedSuspending_ReentryKeepsPersistedSnapshotLocation(t *testing
 	}
 	if got := marked.GetStatus().GetInProgressSnapshotName(); got != "first-attempt" {
 		t.Errorf("InProgressSnapshotName = %q, want the first attempt's location", got)
-	}
-	if got := marked.GetStatus().GetInProgressSnapshotSourceActorVersion(); got != 7 {
-		t.Errorf("InProgressSnapshotSourceActorVersion = %d, want 7", got)
 	}
 }
 
@@ -119,7 +118,7 @@ func TestSuspendActorWorkflow_RejectedAndIdempotentPaths(t *testing.T) {
 
 			seedWorkflowActor(t, ctx, st, resources.ActorRef{Atespace: "team-a", Name: "id1"}, "ns", "tmpl1", tc.seedState)
 
-			actor, err := w.SuspendActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"})
+			actor, err := w.SuspendActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, "")
 			if tc.wantErr {
 				if got := status.Code(err); got != codes.FailedPrecondition {
 					t.Fatalf("status.Code(err) = %v, want %v (err: %v)", got, codes.FailedPrecondition, err)
@@ -191,7 +190,7 @@ func TestSuspendActor_CrashesWhenSuspendingActorMissingWorkerPod(t *testing.T) {
 
 	seedWorkflowActor(t, ctx, st, resources.ActorRef{Atespace: "team-a", Name: "id1"}, "ns", "tmpl1", ateapipb.ActorState_ACTOR_STATE_SUSPENDING)
 
-	if _, err := w.SuspendActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}); err == nil {
+	if _, err := w.SuspendActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, ""); err == nil {
 		t.Fatal("SuspendActor succeeded, want error for SUSPENDING actor with no worker pod")
 	}
 
@@ -225,15 +224,15 @@ func newDanglingDialer() *AteletDialer {
 func TestEnsureAteletSuspended_DanglingWorkerDoesNotRecordPhantomSnapshot(t *testing.T) {
 	tests := []struct {
 		name         string
-		prevSnapshot *ateapipb.ObjectRef
+		prevSnapshot string
 	}{
 		{
-			name:         "keeps previous snapshot",
-			prevSnapshot: &ateapipb.ObjectRef{Atespace: "team-a", Name: "prev"},
+			name:         "keeps previous external snapshot",
+			prevSnapshot: "gs://bucket/root/snapshots/team-a/prev",
 		},
 		{
-			name:         "stays nil without previous snapshot",
-			prevSnapshot: nil,
+			name:         "stays empty without previous external snapshot",
+			prevSnapshot: "",
 		},
 	}
 
@@ -251,7 +250,7 @@ func TestEnsureAteletSuspended_DanglingWorkerDoesNotRecordPhantomSnapshot(t *tes
 						WorkerPod:       "pod-gone",
 					},
 					InProgressSnapshotName: "never-written",
-					LatestSnapshot:         tt.prevSnapshot,
+					ExternalSnapshot:       &ateapipb.ExternalSnapshot{SnapshotUri: tt.prevSnapshot},
 				},
 			}
 			created := storetest.MustCreateActor(t, ctx, persistence, actor)
@@ -271,23 +270,19 @@ func TestEnsureAteletSuspended_DanglingWorkerDoesNotRecordPhantomSnapshot(t *tes
 			if got := stored.GetStatus().GetInProgressSnapshotName(); got != "never-written" {
 				t.Errorf("InProgressSnapshotName = %q, want preserved for debugging", got)
 			}
-			if tt.prevSnapshot == nil {
-				if stored.GetStatus().GetLatestSnapshot() != nil {
-					t.Errorf("LatestSnapshot = %v, want nil", stored.GetStatus().GetLatestSnapshot())
-				}
-			} else if got, want := stored.GetStatus().GetLatestSnapshot().GetName(), tt.prevSnapshot.GetName(); got != want {
-				t.Errorf("LatestSnapshot name = %q, want %q", got, want)
+			if got := stored.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != tt.prevSnapshot {
+				t.Errorf("SnapshotUri = %q, want %q", got, tt.prevSnapshot)
 			}
 		})
 	}
 }
 
 // TestEnsureSuspendedFinalized_NoAssignment verifies finalization runs even when
-// the actor has no worker assignment: the ActorSnapshot must be recorded and
-// the actor moved to SUSPENDED rather than silently left SUSPENDING. This is
-// the shape a paused-origin suspend (#791) produces — a PAUSED actor has no
-// worker — and the regression test for finalization previously living inside
-// the worker-freeing branch.
+// the actor has no worker assignment: the external snapshot must be recorded on
+// the actor and the actor moved to SUSPENDED rather than silently left
+// SUSPENDING. This is the shape a paused-origin suspend (#791) produces — a
+// PAUSED actor has no worker — and the regression test for finalization
+// previously living inside the worker-freeing branch.
 func TestEnsureSuspendedFinalized_NoAssignment(t *testing.T) {
 	ctx := context.Background()
 	persistence := newTestPersistence(t)
@@ -296,20 +291,19 @@ func TestEnsureSuspendedFinalized_NoAssignment(t *testing.T) {
 	actor := &ateapipb.Actor{
 		Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "actor-1"},
 		Status: &ateapipb.ActorStatus{
-			State:                                ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
-			InProgressSnapshotName:               snapshotName,
-			InProgressSnapshotSourceActorVersion: 1,
+			State:                  ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
+			InProgressSnapshotName: snapshotName,
 			LocalSnapshotInfo: &ateapipb.LocalSnapshotInfo{
 				SnapshotName:              "actor-1-pause-snapshot",
 				NodeVmsWithLocalSnapshots: []string{"node1"},
 			},
 		},
 	}
-	created := storetest.MustCreateActor(t, ctx, persistence, actor)
+	storetest.MustCreateActor(t, ctx, persistence, actor)
 
 	w := &ActorWorkflow{store: persistence}
 	tmpl := mustTemplateFromCRD(&atev1alpha1.ActorTemplate{Spec: atev1alpha1.ActorTemplateSpec{SnapshotsConfig: atev1alpha1.SnapshotsConfig{Location: "gs://snapshots"}}})
-	stored, err := w.ensureSuspendedFinalized(ctx, resources.ActorRef{Atespace: "team-a", Name: "actor-1"}, tmpl)
+	stored, err := w.ensureSuspendedFinalized(ctx, resources.ActorRef{Atespace: "team-a", Name: "actor-1"}, tmpl, "")
 	if err != nil {
 		t.Fatalf("ensureSuspendedFinalized: %v", err)
 	}
@@ -317,8 +311,12 @@ func TestEnsureSuspendedFinalized_NoAssignment(t *testing.T) {
 	if stored.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
 		t.Errorf("state = %v, want SUSPENDED", stored.GetStatus().GetState())
 	}
-	if got := stored.GetStatus().GetLatestSnapshot().GetName(); got != snapshotName {
-		t.Errorf("LatestSnapshot = %q, want %q", got, snapshotName)
+	wantURI, err := resources.NewSnapshotURI("gs://snapshots", "team-a", snapshotName)
+	if err != nil {
+		t.Fatalf("NewSnapshotURI: %v", err)
+	}
+	if got := stored.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != wantURI.String() {
+		t.Errorf("SnapshotUri = %q, want %q", got, wantURI.String())
 	}
 	if got := stored.GetStatus().GetInProgressSnapshotName(); got != "" {
 		t.Errorf("InProgressSnapshotName = %q, want cleared", got)
@@ -326,59 +324,287 @@ func TestEnsureSuspendedFinalized_NoAssignment(t *testing.T) {
 	if stored.GetStatus().GetLocalSnapshotInfo() != nil {
 		t.Errorf("LocalSnapshotInfo = %v, want cleared", stored.GetStatus().GetLocalSnapshotInfo())
 	}
-	snapshot, err := persistence.GetActorSnapshot(ctx, resources.ActorSnapshotRef{Atespace: "team-a", Name: snapshotName})
-	if err != nil {
-		t.Fatalf("GetActorSnapshot: %v", err)
-	}
-	wantURI, err := resources.NewSnapshotURI("gs://snapshots", "team-a", snapshotName)
-	if err != nil {
-		t.Fatalf("NewSnapshotURI: %v", err)
-	}
-	if got := snapshot.GetStatus().GetSnapshotUri(); got != wantURI.String() {
-		t.Errorf("snapshot URI = %q, want %q", got, wantURI.String())
-	}
-	if got := snapshot.GetStatus().GetSourceActorUid(); got != created.GetMetadata().GetUid() {
-		t.Errorf("snapshot SourceActorUid = %q, want %q", got, created.GetMetadata().GetUid())
-	}
-	if got := snapshot.GetStatus().GetSourceActorVersion(); got != 1 {
-		t.Errorf("snapshot SourceActorVersion = %d, want 1", got)
-	}
 }
 
-// TestEnsureSuspendedFinalized_StampsSubstrateTemplateRef verifies a
-// ref-mode actor's commit snapshot records the substrate template reference
-// alongside the template uid, with the legacy CRD fields left empty.
-func TestEnsureSuspendedFinalized_StampsSubstrateTemplateRef(t *testing.T) {
+// TestEnsureSuspendedFinalized_CreatesTag verifies a suspend asked for a tag
+// creates it over a copy of the external snapshot this suspend wrote, born
+// ATESPACE-scoped, carrying the template uid a later CreateActor checks
+// against. The copy is what makes the tag's snapshot the tag's own: the actor
+// may suspend again or be deleted without collecting it.
+func TestEnsureSuspendedFinalized_CreatesTag(t *testing.T) {
 	ctx := context.Background()
 	persistence := newTestPersistence(t)
 	template := seedSubstrateTemplate(t, ctx, persistence, "sub-tmpl")
 
 	const snapshotName = "2026-01-01t00-00-00z-ref"
+	actorRef := resources.ActorRef{Atespace: "team-a", Name: "actor-1"}
 	storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
-		Metadata:      &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "actor-1"},
+		Metadata:      &ateapipb.ResourceMetadata{Atespace: actorRef.Atespace, Name: actorRef.Name},
 		ActorTemplate: &ateapipb.ObjectRef{Atespace: "team-a", Name: "sub-tmpl"},
 		Status: &ateapipb.ActorStatus{
-			State:                                ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
-			InProgressSnapshotName:               snapshotName,
-			InProgressSnapshotSourceActorVersion: 1,
+			State:                  ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
+			InProgressSnapshotName: snapshotName,
 		},
 	})
 
-	w := &ActorWorkflow{store: persistence}
-	if _, err := w.ensureSuspendedFinalized(ctx, resources.ActorRef{Atespace: "team-a", Name: "actor-1"}, template); err != nil {
+	w, objects := newFinalizeWorkflow(persistence)
+	// The checkpoint has already written the actor's external snapshot; the
+	// tag's copy is made from it.
+	actorSnapshot := mustSnapshotURI(t, template, "team-a", snapshotName)
+	objects.PutSnapshot(t, actorSnapshot, "manifest.json", "memory.zst")
+
+	stored, err := w.ensureSuspendedFinalized(ctx, actorRef, template, "v1")
+	if err != nil {
 		t.Fatalf("ensureSuspendedFinalized: %v", err)
 	}
+	if got := stored.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != actorSnapshot.String() {
+		t.Errorf("actor snapshot uri = %q, want %q", got, actorSnapshot)
+	}
 
-	snapshot, err := persistence.GetActorSnapshot(ctx, resources.ActorSnapshotRef{Atespace: "team-a", Name: snapshotName})
+	tagSnapshot := mustSnapshotURI(t, template, "team-a", "tag-v1")
+	tag, err := persistence.GetActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: "team-a", Name: "v1"})
 	if err != nil {
-		t.Fatalf("GetActorSnapshot: %v", err)
+		t.Fatalf("GetActorSnapshotTag: %v", err)
 	}
-	st := snapshot.GetStatus()
-	if st.GetActorTemplate().GetAtespace() != "team-a" || st.GetActorTemplate().GetName() != "sub-tmpl" {
-		t.Errorf("snapshot ActorTemplate ref = %v, want team-a/sub-tmpl", st.GetActorTemplate())
+	want := &ateapipb.ActorSnapshotTag{
+		Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "v1", Version: 1},
+		Scope:    ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_ATESPACE,
+		Status: &ateapipb.ActorSnapshotTagStatus{
+			Snapshot:         &ateapipb.ExternalSnapshot{SnapshotUri: tagSnapshot.String(), ContentScope: stored.GetStatus().GetExternalSnapshot().GetContentScope()},
+			ActorTemplateUid: template.GetMetadata().GetUid(),
+		},
 	}
-	if st.GetActorTemplateUid() != template.GetMetadata().GetUid() {
-		t.Errorf("snapshot ActorTemplateUid = %q, want %q", st.GetActorTemplateUid(), template.GetMetadata().GetUid())
+	if diff := cmp.Diff(want, tag, protocmp.Transform(), ignoreUID, ignoreTimestamps); diff != "" {
+		t.Errorf("stored tag mismatch (-want +got):\n%s", diff)
+	}
+
+	wantObjects := []string{"manifest.json", "memory.zst"}
+	if diff := cmp.Diff(wantObjects, objects.Snapshot(t, tagSnapshot)); diff != "" {
+		t.Errorf("the tag's external snapshot mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(wantObjects, objects.Snapshot(t, actorSnapshot)); diff != "" {
+		t.Errorf("the actor's external snapshot mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestEnsureSuspendedFinalized_ReleasesReplacedSnapshot verifies which external
+// snapshot a suspend collects. The actor's previous one goes away, because
+// nothing else can name it — unless the actor was only borrowing it from a tag,
+// in which case the tag owns those objects and the suspend must leave them be.
+func TestEnsureSuspendedFinalized_ReleasesReplacedSnapshot(t *testing.T) {
+	tests := []struct {
+		name         string
+		borrowed     bool
+		wantReleased bool
+	}{
+		{
+			name:         "releases the external snapshot the actor owned",
+			wantReleased: true,
+		},
+		{
+			name:         "leaves an external snapshot borrowed from a tag in place",
+			borrowed:     true,
+			wantReleased: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			persistence := newTestPersistence(t)
+			template := seedSubstrateTemplate(t, ctx, persistence, "sub-tmpl")
+			w, objects := newFinalizeWorkflow(persistence)
+
+			const snapshotName = "2026-01-01t00-00-00z-new"
+			previous := mustSnapshotURI(t, template, "team-a", "tag-v1")
+			fresh := mustSnapshotURI(t, template, "team-a", snapshotName)
+			objects.PutSnapshot(t, previous, "manifest.json")
+			objects.PutSnapshot(t, fresh, "manifest.json")
+
+			actorRef := resources.ActorRef{Atespace: "team-a", Name: "actor-1"}
+			actorStatus := &ateapipb.ActorStatus{
+				State:                  ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
+				InProgressSnapshotName: snapshotName,
+				ExternalSnapshot:       &ateapipb.ExternalSnapshot{SnapshotUri: previous.String()},
+			}
+			if tt.borrowed {
+				actorStatus.CurrentSnapshotTag = &ateapipb.ObjectRef{Atespace: "team-a", Name: "v1"}
+			}
+			storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
+				Metadata:      &ateapipb.ResourceMetadata{Atespace: actorRef.Atespace, Name: actorRef.Name},
+				ActorTemplate: &ateapipb.ObjectRef{Atespace: "team-a", Name: "sub-tmpl"},
+				Status:        actorStatus,
+			})
+
+			stored, err := w.ensureSuspendedFinalized(ctx, actorRef, template, "")
+			if err != nil {
+				t.Fatalf("ensureSuspendedFinalized: %v", err)
+			}
+			// Whichever way the snapshot went, the actor now owns the one it
+			// just wrote and is no longer borrowing.
+			if got := stored.GetStatus().GetCurrentSnapshotTag(); got != nil {
+				t.Errorf("current snapshot tag = %v, want cleared", got)
+			}
+			if released := len(objects.Snapshot(t, previous)) == 0; released != tt.wantReleased {
+				t.Errorf("previous external snapshot released = %v, want %v", released, tt.wantReleased)
+			}
+			if len(objects.Snapshot(t, fresh)) == 0 {
+				t.Error("the external snapshot this suspend wrote was collected")
+			}
+		})
+	}
+}
+
+// errObjectStore stands in for object storage being unreachable.
+var errObjectStore = errors.New("object storage is unavailable")
+
+// TestEnsureSuspendedFinalized_RetriesAfterObjectStoreFailure verifies a suspend
+// that dies in object storage leaves the actor exactly where a retry picks it
+// up — SUSPENDING, still naming the snapshot it was replacing, with no tag row
+// to collide with — and that the retry then finishes the suspend.
+func TestEnsureSuspendedFinalized_RetriesAfterObjectStoreFailure(t *testing.T) {
+	tests := []struct {
+		name string
+		fail func(*objectstoretest.Fake)
+		heal func(*objectstoretest.Fake)
+	}{
+		{
+			name: "the copy to the tag fails",
+			fail: func(f *objectstoretest.Fake) {
+				f.OnCopy = func(string, string, string, string) error { return errObjectStore }
+			},
+			heal: func(f *objectstoretest.Fake) { f.OnCopy = nil },
+		},
+		{
+			name: "the release of the replaced external snapshot fails",
+			fail: func(f *objectstoretest.Fake) {
+				f.OnDelete = func(string, string) error { return errObjectStore }
+			},
+			heal: func(f *objectstoretest.Fake) { f.OnDelete = nil },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			persistence := newTestPersistence(t)
+			template := seedSubstrateTemplate(t, ctx, persistence, "sub-tmpl")
+			w, objects := newFinalizeWorkflow(persistence)
+
+			const snapshotName = "2026-01-01t00-00-00z-new"
+			previous := mustSnapshotURI(t, template, "team-a", "old")
+			fresh := mustSnapshotURI(t, template, "team-a", snapshotName)
+			objects.PutSnapshot(t, previous, "manifest.json")
+			objects.PutSnapshot(t, fresh, "manifest.json")
+
+			actorRef := resources.ActorRef{Atespace: "team-a", Name: "actor-1"}
+			storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
+				Metadata:      &ateapipb.ResourceMetadata{Atespace: actorRef.Atespace, Name: actorRef.Name},
+				ActorTemplate: &ateapipb.ObjectRef{Atespace: "team-a", Name: "sub-tmpl"},
+				Status: &ateapipb.ActorStatus{
+					State:                  ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
+					InProgressSnapshotName: snapshotName,
+					ExternalSnapshot:       &ateapipb.ExternalSnapshot{SnapshotUri: previous.String()},
+				},
+			})
+
+			tt.fail(objects)
+			if _, err := w.ensureSuspendedFinalized(ctx, actorRef, template, "v1"); !errors.Is(err, errObjectStore) {
+				t.Fatalf("ensureSuspendedFinalized = %v, want an error wrapping %v", err, errObjectStore)
+			}
+			stuck, err := persistence.GetActor(ctx, actorRef)
+			if err != nil {
+				t.Fatalf("GetActor: %v", err)
+			}
+			if got := stuck.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_SUSPENDING {
+				t.Errorf("state after the failure = %v, want SUSPENDING (retryable)", got)
+			}
+			if got := stuck.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != previous.String() {
+				t.Errorf("actor snapshot uri after the failure = %q, want the replaced %q", got, previous)
+			}
+			if _, err := persistence.GetActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: "team-a", Name: "v1"}); !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("GetActorSnapshotTag after the failure = %v, want ErrNotFound: no row may outlive its snapshot", err)
+			}
+
+			tt.heal(objects)
+			stored, err := w.ensureSuspendedFinalized(ctx, actorRef, template, "v1")
+			if err != nil {
+				t.Fatalf("retried ensureSuspendedFinalized: %v", err)
+			}
+			if got := stored.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != fresh.String() {
+				t.Errorf("actor snapshot uri after the retry = %q, want %q", got, fresh)
+			}
+			tagSnapshot := mustSnapshotURI(t, template, "team-a", "tag-v1")
+			tag, err := persistence.GetActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: "team-a", Name: "v1"})
+			if err != nil {
+				t.Fatalf("GetActorSnapshotTag after the retry: %v", err)
+			}
+			if got := tag.GetStatus().GetSnapshot().GetSnapshotUri(); got != tagSnapshot.String() {
+				t.Errorf("tag snapshot uri = %q, want %q", got, tagSnapshot)
+			}
+			if len(objects.Snapshot(t, tagSnapshot)) == 0 {
+				t.Error("the tag has no external snapshot after the retry")
+			}
+			if got := objects.Snapshot(t, previous); len(got) != 0 {
+				t.Errorf("replaced external snapshot still holds %v, want it collected by the retry", got)
+			}
+		})
+	}
+}
+
+// TestEnsureSuspendedFinalized_TagNameTaken verifies a suspend re-using a tag
+// name is rejected and leaves the actor SUSPENDING, so the client sees the
+// conflict rather than a tag silently moving to a new external snapshot.
+func TestEnsureSuspendedFinalized_TagNameTaken(t *testing.T) {
+	ctx := context.Background()
+	persistence := newTestPersistence(t)
+	template := seedSubstrateTemplate(t, ctx, persistence, "sub-tmpl")
+	w := &ActorWorkflow{store: persistence}
+
+	// The first actor takes the name.
+	firstRef := resources.ActorRef{Atespace: "team-a", Name: "actor-1"}
+	storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
+		Metadata:      &ateapipb.ResourceMetadata{Atespace: firstRef.Atespace, Name: firstRef.Name},
+		ActorTemplate: &ateapipb.ObjectRef{Atespace: "team-a", Name: "sub-tmpl"},
+		Status: &ateapipb.ActorStatus{
+			State:                  ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
+			InProgressSnapshotName: "2026-01-01t00-00-00z-one",
+		},
+	})
+	first, err := w.ensureSuspendedFinalized(ctx, firstRef, template, "v1")
+	if err != nil {
+		t.Fatalf("ensureSuspendedFinalized(actor-1): %v", err)
+	}
+
+	secondRef := resources.ActorRef{Atespace: "team-a", Name: "actor-2"}
+	storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
+		Metadata:      &ateapipb.ResourceMetadata{Atespace: secondRef.Atespace, Name: secondRef.Name},
+		ActorTemplate: &ateapipb.ObjectRef{Atespace: "team-a", Name: "sub-tmpl"},
+		Status: &ateapipb.ActorStatus{
+			State:                  ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
+			InProgressSnapshotName: "2026-01-01t00-00-00z-two",
+		},
+	})
+	_, err = w.ensureSuspendedFinalized(ctx, secondRef, template, "v1")
+	if code := status.Code(err); code != codes.AlreadyExists {
+		t.Fatalf("ensureSuspendedFinalized(actor-2) error = %v (code %v), want code AlreadyExists", err, code)
+	}
+
+	// The tag still points at the first actor's external snapshot, and the
+	// second actor is left where a retry can pick it up.
+	tag, err := persistence.GetActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: "team-a", Name: "v1"})
+	if err != nil {
+		t.Fatalf("GetActorSnapshotTag: %v", err)
+	}
+	if got, want := tag.GetStatus().GetSnapshot().GetSnapshotUri(), first.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != want {
+		t.Errorf("tag snapshot URI = %q, want the first actor's %q", got, want)
+	}
+	second, err := persistence.GetActor(ctx, secondRef)
+	if err != nil {
+		t.Fatalf("GetActor(actor-2): %v", err)
+	}
+	if got := second.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_SUSPENDING {
+		t.Errorf("actor-2 state = %v, want SUSPENDING", got)
 	}
 }
 
@@ -450,7 +676,7 @@ func TestEnsureSuspendedFinalized_ReleasesOnlyOwnWorker(t *testing.T) {
 
 			w := &ActorWorkflow{store: persistence}
 			tmpl := mustTemplateFromCRD(&atev1alpha1.ActorTemplate{Spec: atev1alpha1.ActorTemplateSpec{SnapshotsConfig: atev1alpha1.SnapshotsConfig{Location: "gs://bucket/root"}}})
-			if _, err := w.ensureSuspendedFinalized(ctx, resources.ActorRef{Atespace: "team-a", Name: "shared"}, tmpl); err != nil {
+			if _, err := w.ensureSuspendedFinalized(ctx, resources.ActorRef{Atespace: "team-a", Name: "shared"}, tmpl, ""); err != nil {
 				t.Fatalf("ensureSuspendedFinalized: %v", err)
 			}
 
@@ -462,52 +688,6 @@ func TestEnsureSuspendedFinalized_ReleasesOnlyOwnWorker(t *testing.T) {
 				t.Errorf("worker released = %t, want %t (assignment: %v)", released, tt.wantReleased, stored.GetStatus().GetAssignment())
 			}
 		})
-	}
-}
-
-// TestEnsureSuspendedFinalized_SnapshotSourceActorVersion pins that the
-// ActorSnapshot records the source actor version persisted when suspension
-// was marked — the version the checkpoint captured — rather than the actor's
-// version at finalize time, including on a re-entered workflow.
-func TestEnsureSuspendedFinalized_SnapshotSourceActorVersion(t *testing.T) {
-	ctx := context.Background()
-	persistence := newTestPersistence(t)
-	const snapshotName = "2026-01-01t00-00-00z-abc"
-	storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
-		Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "actor-1"},
-		Status: &ateapipb.ActorStatus{
-			State: ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
-			WorkerAssignment: &ateapipb.WorkerAssignment{
-				Worker:          &ateapipb.ObjectRef{Name: testWorkerUID("pod-gone")},
-				WorkerNamespace: "worker-ns",
-				WorkerPool:      "pool",
-				WorkerPod:       "pod-gone",
-				WorkerPodUid:    testWorkerUID("pod-gone"),
-			},
-			InProgressSnapshotName:               snapshotName,
-			InProgressSnapshotSourceActorVersion: 42,
-		},
-	})
-
-	w := &ActorWorkflow{store: persistence}
-	tmpl := mustTemplateFromCRD(&atev1alpha1.ActorTemplate{Spec: atev1alpha1.ActorTemplateSpec{SnapshotsConfig: atev1alpha1.SnapshotsConfig{Location: "gs://snapshots"}}})
-	final, err := w.ensureSuspendedFinalized(ctx, resources.ActorRef{Atespace: "team-a", Name: "actor-1"}, tmpl)
-	if err != nil {
-		t.Fatalf("ensureSuspendedFinalized: %v", err)
-	}
-	if final.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
-		t.Errorf("state = %v, want SUSPENDED", final.GetStatus().GetState())
-	}
-	if final.GetStatus().GetInProgressSnapshotName() != "" || final.GetStatus().GetInProgressSnapshotSourceActorVersion() != 0 {
-		t.Errorf("in-progress snapshot fields not cleared: %q / %d", final.GetStatus().GetInProgressSnapshotName(), final.GetStatus().GetInProgressSnapshotSourceActorVersion())
-	}
-
-	snap, err := persistence.GetActorSnapshot(ctx, resources.ActorSnapshotRef{Atespace: "team-a", Name: final.GetStatus().GetLatestSnapshot().GetName()})
-	if err != nil {
-		t.Fatalf("GetActorSnapshot: %v", err)
-	}
-	if got := snap.GetStatus().GetSourceActorVersion(); got != 42 {
-		t.Errorf("SourceActorVersion = %d, want 42", got)
 	}
 }
 
@@ -696,7 +876,7 @@ func TestSuspendActor_PausedWithoutLocalSnapshotCrashes(t *testing.T) {
 
 	seedWorkflowActor(t, ctx, st, resources.ActorRef{Atespace: "team-a", Name: "id1"}, "ns", "tmpl1", ateapipb.ActorState_ACTOR_STATE_PAUSED)
 
-	if _, err := w.SuspendActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}); err == nil {
+	if _, err := w.SuspendActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, ""); err == nil {
 		t.Fatal("SuspendActor succeeded, want error for PAUSED actor with no local snapshot record")
 	}
 

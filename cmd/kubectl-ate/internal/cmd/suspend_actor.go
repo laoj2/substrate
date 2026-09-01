@@ -24,7 +24,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var suspendAtespaceFlag string
+var (
+	suspendAtespaceFlag string
+	suspendTagFlag      string
+)
 
 var suspendActorCmd = &cobra.Command{
 	Use:   "actor <actor-name>",
@@ -39,9 +42,11 @@ var suspendActorCmd = &cobra.Command{
 		defer apiClient.Close()
 
 		actorRef := resources.ActorRef{Atespace: suspendAtespaceFlag, Name: args[0]}
-		resp, err := apiClient.SuspendActor(ctx, &ateapipb.SuspendActorRequest{
-			Actor: actorRef.ToObjectRef(),
-		})
+		req := &ateapipb.SuspendActorRequest{Actor: actorRef.ToObjectRef()}
+		if suspendTagFlag != "" {
+			req.Tag = &ateapipb.SuspendActorRequest_Tag{Name: suspendTagFlag}
+		}
+		resp, err := apiClient.SuspendActor(ctx, req)
 		if err != nil {
 			return fmt.Errorf("failed to suspend actor: %w", err)
 		}
@@ -52,6 +57,7 @@ var suspendActorCmd = &cobra.Command{
 
 func init() {
 	suspendActorCmd.Flags().StringVarP(&suspendAtespaceFlag, "atespace", "a", "", "Atespace the actor lives in")
+	suspendActorCmd.Flags().StringVar(&suspendTagFlag, "tag", "", "Name of an ActorSnapshotTag to create over the external snapshot this suspend takes")
 	_ = suspendActorCmd.MarkFlagRequired("atespace")
 	suspendCmd.AddCommand(suspendActorCmd)
 }

@@ -244,40 +244,64 @@ func TestUpdateActorTemplate_ConcurrentWriteReturnsConflict(t *testing.T) {
 	}
 }
 
+// createTestSuspendedActor seeds an actor holding an external snapshot, which
+// is what a tagged suspend tags.
+func createTestSuspendedActor(t *testing.T, s *Persistence, atespace, name string) *ateapipb.Actor {
+	t.Helper()
+	created, err := s.CreateActor(context.Background(), &ateapipb.Actor{
+		Metadata:               &ateapipb.ResourceMetadata{Atespace: atespace, Name: name},
+		ActorTemplateNamespace: "default",
+		ActorTemplateName:      "template-a",
+		Status: &ateapipb.ActorStatus{
+			State:            ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
+			ExternalSnapshot: &ateapipb.ExternalSnapshot{SnapshotUri: "gs://bucket/snapshots/" + atespace + "/" + name, ContentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateActor(%s/%s) failed: %v", atespace, name, err)
+	}
+	return created
+}
+
+// createTestActorSnapshotTag creates tagName over actor's external snapshot the
+// way a tagged suspend does, and returns the stored tag along with the
+// finalized actor, whose version the next finalize needs.
+func createTestActorSnapshotTag(t *testing.T, s *Persistence, actor *ateapipb.Actor, tagAtespace, tagName string) (*ateapipb.ActorSnapshotTag, *ateapipb.Actor) {
+	t.Helper()
+	ctx := context.Background()
+	suspended, err := s.UpdateActorAndTag(ctx, resources.ActorRefFromActor(actor), store.PreconditionFrom(actor), func(*ateapipb.Actor) error { return nil }, &ateapipb.ActorSnapshotTag{
+		Metadata: &ateapipb.ResourceMetadata{Atespace: tagAtespace, Name: tagName},
+		Scope:    ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_ATESPACE,
+		Status: &ateapipb.ActorSnapshotTagStatus{
+			Snapshot: &ateapipb.ExternalSnapshot{SnapshotUri: actor.GetStatus().GetExternalSnapshot().GetSnapshotUri()},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateActorAndTag(tag %s/%s) failed: %v", tagAtespace, tagName, err)
+	}
+	tag, err := s.GetActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: tagAtespace, Name: tagName})
+	if err != nil {
+		t.Fatalf("GetActorSnapshotTag(%s/%s) failed: %v", tagAtespace, tagName, err)
+	}
+	return tag, suspended
+}
+
 func TestUpdateActorSnapshotTag_CASPreventsDeleteRecreateABA(t *testing.T) {
 	s := setupPostgresPersistence(t)
 	ctx := context.Background()
 	createTestAtespace(t, s, "team-a")
-	for _, name := range []string{"snapshot-a", "snapshot-b"} {
-		if _, err := s.CreateActorSnapshot(ctx, &ateapipb.ActorSnapshot{
-			Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: name},
-			Status:   &ateapipb.ActorSnapshotStatus{SnapshotUri: "gs://bucket/" + name},
-		}); err != nil {
-			t.Fatalf("CreateActorSnapshot(%q) failed: %v", name, err)
-		}
-	}
-	original, err := s.CreateActorSnapshotTag(ctx, resources.ActorSnapshotRef{Atespace: "team-a", Name: "snapshot-a"}, &ateapipb.ActorSnapshotTag{
-		Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "tag-a"},
-		Scope:    ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_ATESPACE,
-	})
-	if err != nil {
-		t.Fatalf("CreateActorSnapshotTag failed: %v", err)
-	}
+	actorA := createTestSuspendedActor(t, s, "team-a", "actor-a")
+	actorB := createTestSuspendedActor(t, s, "team-a", "actor-b")
+	original, _ := createTestActorSnapshotTag(t, s, actorA, "team-a", "tag-a")
 
 	mutations := 0
 	var recreated *ateapipb.ActorSnapshotTag
-	_, err = s.UpdateActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: "team-a", Name: "tag-a"}, store.PreconditionFrom(original), func(toUpdate *ateapipb.ActorSnapshotTag) error {
+	_, err := s.UpdateActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: "team-a", Name: "tag-a"}, store.PreconditionFrom(original), func(toUpdate *ateapipb.ActorSnapshotTag) error {
 		mutations++
 		if _, err := s.DeleteActorSnapshotTag(ctx, resources.ActorSnapshotTagRef{Atespace: "team-a", Name: "tag-a"}); err != nil {
 			return fmt.Errorf("deleting original tag: %w", err)
 		}
-		recreated, err = s.CreateActorSnapshotTag(ctx, resources.ActorSnapshotRef{Atespace: "team-a", Name: "snapshot-b"}, &ateapipb.ActorSnapshotTag{
-			Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "tag-a"},
-			Scope:    ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_ATESPACE,
-		})
-		if err != nil {
-			return fmt.Errorf("recreating tag: %w", err)
-		}
+		recreated, _ = createTestActorSnapshotTag(t, s, actorB, "team-a", "tag-a")
 		toUpdate.Scope = ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_PUBLISHED
 		return nil
 	})
@@ -296,24 +320,30 @@ func TestUpdateActorSnapshotTag_CASPreventsDeleteRecreateABA(t *testing.T) {
 	}
 }
 
-func TestCreateActorSnapshotTag_ForeignKeyErrors(t *testing.T) {
+func TestUpdateActorAndTag_TagForeignKeyErrors(t *testing.T) {
 	s := setupPostgresPersistence(t)
 	ctx := context.Background()
 	createTestAtespace(t, s, "team-a")
-	tag := func() *ateapipb.ActorSnapshotTag {
-		return &ateapipb.ActorSnapshotTag{Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "latest"}}
+	actor := createTestSuspendedActor(t, s, "team-a", "actor-a")
+
+	// A tag in an atespace that does not exist trips the tag's atespace FK.
+	_, err := s.UpdateActorAndTag(ctx, resources.ActorRefFromActor(actor), store.PreconditionFrom(actor), func(*ateapipb.Actor) error { return nil }, &ateapipb.ActorSnapshotTag{
+		Metadata: &ateapipb.ResourceMetadata{Atespace: "gone", Name: "latest"},
+		Status: &ateapipb.ActorSnapshotTagStatus{
+			Snapshot: &ateapipb.ExternalSnapshot{SnapshotUri: actor.GetStatus().GetExternalSnapshot().GetSnapshotUri()},
+		},
+	})
+	if !errors.Is(err, store.ErrFailedPrecondition) {
+		t.Errorf("missing tag atespace error = %v, want ErrFailedPrecondition", err)
 	}
 
-	if _, err := s.CreateActorSnapshotTag(ctx, resources.ActorSnapshotRef{Atespace: "team-a", Name: "missing"}, tag()); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("missing snapshot error = %v, want ErrNotFound", err)
+	// The rejected tag must have rolled the actor update back with it.
+	stored, err := s.GetActor(ctx, resources.ActorRefFromActor(actor))
+	if err != nil {
+		t.Fatalf("GetActor failed: %v", err)
 	}
-	if _, err := s.CreateActorSnapshot(ctx, &ateapipb.ActorSnapshot{Metadata: &ateapipb.ResourceMetadata{Atespace: "gone", Name: "snapshot"}}); err != nil {
-		t.Fatalf("CreateActorSnapshot: %v", err)
-	}
-	tagWithoutAtespace := tag()
-	tagWithoutAtespace.Metadata.Atespace = "gone"
-	if _, err := s.CreateActorSnapshotTag(ctx, resources.ActorSnapshotRef{Atespace: "gone", Name: "snapshot"}, tagWithoutAtespace); !errors.Is(err, store.ErrFailedPrecondition) {
-		t.Errorf("missing tag atespace error = %v, want ErrFailedPrecondition", err)
+	if got, want := stored.GetMetadata().GetVersion(), actor.GetMetadata().GetVersion(); got != want {
+		t.Errorf("actor version = %d, want %d (rolled back)", got, want)
 	}
 }
 

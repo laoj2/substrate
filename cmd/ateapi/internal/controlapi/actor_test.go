@@ -1017,10 +1017,23 @@ func TestValidateSuspendActorRequest(t *testing.T) {
 		"invalid actor.name",
 		&ateapipb.SuspendActorRequest{Actor: &ateapipb.ObjectRef{Atespace: "ns1", Name: "ID1"}},
 		field.ErrorList{field.Invalid(field.NewPath("actor", "name"), "ID1", "")},
+	}, {
+		"valid tag",
+		&ateapipb.SuspendActorRequest{Actor: &ateapipb.ObjectRef{Atespace: "ns1", Name: "id1"}, Tag: &ateapipb.SuspendActorRequest_Tag{Name: "v1"}},
+		nil,
+	}, {
+		// TODO: tag.name is not validated yet, so neither of these is rejected.
+		"unvalidated tag.name: missing",
+		&ateapipb.SuspendActorRequest{Actor: &ateapipb.ObjectRef{Atespace: "ns1", Name: "id1"}, Tag: &ateapipb.SuspendActorRequest_Tag{}},
+		nil,
+	}, {
+		"unvalidated tag.name: not a short name",
+		&ateapipb.SuspendActorRequest{Actor: &ateapipb.ObjectRef{Atespace: "ns1", Name: "id1"}, Tag: &ateapipb.SuspendActorRequest_Tag{Name: "V1"}},
+		nil,
 	}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertValidateErr(t, validateSuspendActorRequest(tt.req), tt.want)
+			assertValidateErr(t, validateSuspendActorRequest(context.Background(), tt.req), tt.want)
 		})
 	}
 }

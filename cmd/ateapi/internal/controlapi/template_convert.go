@@ -292,17 +292,14 @@ func actorMetadataFieldFromCRD(in atev1alpha1.ActorMetadataField) ateapipb.Actor
 
 // templateStatusFromCRD maps only what the substrate proto models: the CRD's
 // phase machinery belongs to the CRD controller, while converted templates
-// are consumed by the actor workflows, which need the golden snapshot ref.
+// are consumed by the actor workflows, which need the golden snapshot.
 func templateStatusFromCRD(in atev1alpha1.ActorTemplateStatus) *ateapipb.ActorTemplateStatus {
 	out := &ateapipb.ActorTemplateStatus{}
-	if in.GoldenSnapshot != "" {
-		// The CRD stores only the snapshot name; golden snapshots always live
-		// in the reserved golden atespace.
+	if in.GoldenSnapshotURI != "" {
+		// The CRD does not record the content scope; leaving it unspecified
+		// is what a restore expects of a golden snapshot anyway.
 		out.GoldenSnapshotStatus = &ateapipb.GoldenSnapshotStatus{
-			GoldenSnapshot: &ateapipb.ObjectRef{
-				Atespace: resources.GoldenActorAtespace,
-				Name:     in.GoldenSnapshot,
-			},
+			GoldenSnapshot: &ateapipb.ExternalSnapshot{SnapshotUri: in.GoldenSnapshotURI},
 		}
 	}
 	return out

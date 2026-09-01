@@ -65,33 +65,19 @@ CREATE TABLE IF NOT EXISTS actor_templates (
     PRIMARY KEY (atespace, name)
 );
 
-CREATE TABLE IF NOT EXISTS actor_snapshots (
+-- A tag names one external snapshot, which it owns outright. There is no
+-- snapshot table: the URI lives in the tag's proto, and nothing else in the
+-- database refers to it.
+CREATE TABLE IF NOT EXISTS actor_snapshot_tags (
     atespace  text NOT NULL,
     name      text NOT NULL,
     uid       text NOT NULL,
     version   bigint NOT NULL,
     proto     bytea NOT NULL,
-    PRIMARY KEY (atespace, name)
-);
-
-CREATE TABLE IF NOT EXISTS actor_snapshot_tags (
-    atespace           text NOT NULL,
-    name               text NOT NULL,
-    snapshot_atespace  text NOT NULL,
-    snapshot_name      text NOT NULL,
-    uid                text NOT NULL,
-    version            bigint NOT NULL,
-    proto              bytea NOT NULL,
     PRIMARY KEY (atespace, name),
     CONSTRAINT actor_snapshot_tags_atespace_fk
-        FOREIGN KEY (atespace) REFERENCES atespaces(name) ON DELETE RESTRICT,
-    CONSTRAINT actor_snapshot_tags_snapshot_fk
-        FOREIGN KEY (snapshot_atespace, snapshot_name)
-        REFERENCES actor_snapshots(atespace, name) ON DELETE RESTRICT
+        FOREIGN KEY (atespace) REFERENCES atespaces(name) ON DELETE RESTRICT
 );
-
-CREATE INDEX IF NOT EXISTS actor_snapshot_tags_snapshot_idx
-    ON actor_snapshot_tags (snapshot_atespace, snapshot_name);
 
 -- Workers are global-scoped and named by their Kubernetes pod UID, so name
 -- alone is the primary key.

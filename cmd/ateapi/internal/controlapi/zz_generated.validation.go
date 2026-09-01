@@ -526,12 +526,11 @@ func Validate_ActorStatus(
 	}
 
 	// field ateapipb.ActorStatus.InProgressSnapshotName has no validation
-	// field ateapipb.ActorStatus.LatestSnapshot has no validation
+	// field ateapipb.ActorStatus.ExternalSnapshot has no validation
 	// field ateapipb.ActorStatus.LocalSnapshotInfo has no validation
-	// field ateapipb.ActorStatus.InProgressSnapshotSourceActorVersion has no validation
 	// field ateapipb.ActorStatus.ActorVolumes has no validation
 	// field ateapipb.ActorStatus.InProgressLocalSnapshotName has no validation
-	// field ateapipb.ActorStatus.SourceSnapshot has no validation
+	// field ateapipb.ActorStatus.CurrentSnapshotTag has no validation
 	return errs
 }
 
@@ -2337,6 +2336,45 @@ func Validate_Selector(
 				return oldObj.MatchLabels
 			})
 		errs = append(errs, fn(fldPath.Child("match_labels"), obj.MatchLabels, oldVal, oldObj != nil)...)
+	}
+
+	return errs
+}
+
+// Validate_SuspendActorRequest validates an instance of SuspendActorRequest according
+// to declarative validation rules in the API schema.
+func Validate_SuspendActorRequest(
+	ctx context.Context, op operation.Operation, fldPath *field.Path,
+	obj, oldObj *ateapipb.SuspendActorRequest) (errs field.ErrorList) {
+
+	// field ateapipb.SuspendActorRequest.Actor has no validation
+
+	{ // field ateapipb.SuspendActorRequest.Tag
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj *ateapipb.SuspendActorRequest_Tag,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if ateDeepEqual(obj, oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.OptionalPointer(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.SuspendActorRequest) *ateapipb.SuspendActorRequest_Tag {
+				return oldObj.Tag
+			})
+		errs = append(errs, fn(fldPath.Child("tag"), obj.Tag, oldVal, oldObj != nil)...)
 	}
 
 	return errs

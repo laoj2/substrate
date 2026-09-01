@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
-	"github.com/agent-substrate/substrate/internal/resources"
 	atev1alpha1 "github.com/agent-substrate/substrate/pkg/api/v1alpha1"
 	listersv1alpha1 "github.com/agent-substrate/substrate/pkg/client/listers/api/v1alpha1"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
@@ -106,8 +105,8 @@ func TestActorTemplateFromCRD(t *testing.T) {
 			},
 		},
 		Status: atev1alpha1.ActorTemplateStatus{
-			Phase:          atev1alpha1.PhaseReady,
-			GoldenSnapshot: "2026-01-01t00-00-00z-abc",
+			Phase:             atev1alpha1.PhaseReady,
+			GoldenSnapshotURI: "gs://ate-snapshots/ate-demo-counter-microvm-csi/snapshots/ate-golden/2026-01-01t00-00-00z-abc",
 		},
 	}
 
@@ -166,10 +165,7 @@ func TestActorTemplateFromCRD(t *testing.T) {
 		}},
 		Status: &ateapipb.ActorTemplateStatus{
 			GoldenSnapshotStatus: &ateapipb.GoldenSnapshotStatus{
-				GoldenSnapshot: &ateapipb.ObjectRef{
-					Atespace: resources.GoldenActorAtespace,
-					Name:     "2026-01-01t00-00-00z-abc",
-				},
+				GoldenSnapshot: &ateapipb.ExternalSnapshot{SnapshotUri: "gs://ate-snapshots/ate-demo-counter-microvm-csi/snapshots/ate-golden/2026-01-01t00-00-00z-abc"},
 			},
 		},
 	}

@@ -219,7 +219,7 @@ func TestCreateActorTemplateIgnoresServerOwnedFields(t *testing.T) {
 		// Server-owned status a client must not be able to set.
 		tmpl.Status = &ateapipb.ActorTemplateStatus{
 			GoldenSnapshotStatus: &ateapipb.GoldenSnapshotStatus{
-				GoldenSnapshot: &ateapipb.ObjectRef{Atespace: "ate-golden", Name: "sneaky"},
+				GoldenSnapshot: &ateapipb.ExternalSnapshot{SnapshotUri: "gs://my-bucket/snapshots/ate-golden/sneaky"},
 			},
 		}
 	})

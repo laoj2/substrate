@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
-	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store/storetest"
 	"github.com/agent-substrate/substrate/internal/ateattr"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/agent-substrate/substrate/internal/resources"
@@ -282,21 +281,10 @@ func TestCreateActor_RejectsDifferentTemplateForDataSnapshot(t *testing.T) {
 	tmpl := createTemplate(t, tc, ns)
 	createTemplateWithSelector(t, tc, "tmpl2", nil)
 
-	snapshot := storetest.MustCreateActorSnapshot(t, context.Background(), tc.persistence, &ateapipb.ActorSnapshot{
-		Metadata: &ateapipb.ResourceMetadata{Atespace: testAtespace, Name: "data-snapshot"},
-		Status: &ateapipb.ActorSnapshotStatus{
-			SourceActor:      &ateapipb.ObjectRef{Atespace: testAtespace, Name: "source"},
-			ActorTemplateUid: tmpl.GetMetadata().GetUid(),
-			ContentScope:     ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
-			SnapshotUri:      "gs://snapshots/snapshots/" + testAtespace + "/data-snapshot",
-		},
+	seedActorSnapshotTag(t, tc, "data-source", "data-snapshot", func(tag *ateapipb.ActorSnapshotTag) {
+		tag.Status.Snapshot.ContentScope = ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA
+		tag.Status.ActorTemplateUid = tmpl.GetMetadata().GetUid()
 	})
-	if _, err := tc.persistence.CreateActorSnapshotTag(context.Background(), resources.ActorSnapshotRef{Atespace: testAtespace, Name: snapshot.GetMetadata().GetName()}, &ateapipb.ActorSnapshotTag{
-		Metadata: &ateapipb.ResourceMetadata{Atespace: testAtespace, Name: "data-snapshot"},
-		Scope:    ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_ATESPACE,
-	}); err != nil {
-		t.Fatalf("CreateActorSnapshotTag: %v", err)
-	}
 
 	_, err := tc.service.CreateActor(context.Background(), &ateapipb.CreateActorRequest{
 		Actor: &ateapipb.Actor{
@@ -337,20 +325,10 @@ func TestCreateActor_RejectsSnapshotWithExternalVolumes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create ActorTemplate: %v", err)
 	}
-	snapshot := storetest.MustCreateActorSnapshot(t, context.Background(), tc.persistence, &ateapipb.ActorSnapshot{
-		Metadata: &ateapipb.ResourceMetadata{Atespace: testAtespace, Name: "external-volume-snapshot"},
-		Status: &ateapipb.ActorSnapshotStatus{
-			ActorTemplateUid: template.GetMetadata().GetUid(),
-			SnapshotUri:      "gs://snapshots/snapshots/" + testAtespace + "/external-volume-snapshot",
-		},
+	seedActorSnapshotTag(t, tc, "external-volume-source", "external-volume-snapshot", func(tag *ateapipb.ActorSnapshotTag) {
+		tag.Status.ActorTemplateUid = template.GetMetadata().GetUid()
 	})
 	tagRef := &ateapipb.ObjectRef{Atespace: testAtespace, Name: "external-volume-snapshot"}
-	if _, err := tc.persistence.CreateActorSnapshotTag(context.Background(), resources.ActorSnapshotRef{Atespace: testAtespace, Name: snapshot.GetMetadata().GetName()}, &ateapipb.ActorSnapshotTag{
-		Metadata: &ateapipb.ResourceMetadata{Atespace: tagRef.GetAtespace(), Name: tagRef.GetName()},
-		Scope:    ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_ATESPACE,
-	}); err != nil {
-		t.Fatalf("CreateActorSnapshotTag: %v", err)
-	}
 
 	_, err = tc.service.CreateActor(context.Background(), &ateapipb.CreateActorRequest{
 		Actor: &ateapipb.Actor{
@@ -1209,8 +1187,8 @@ func TestValidation_Actor(t *testing.T) {
 		assertGrpcError(t, err, codes.InvalidArgument, "invalid page_token")
 	})
 
-	t.Run("ListActorSnapshots invalid token", func(t *testing.T) {
-		_, err := tc.client.ListActorSnapshots(context.Background(), &ateapipb.ListActorSnapshotsRequest{PageToken: "%%%"})
+	t.Run("ListActorSnapshotTags invalid token", func(t *testing.T) {
+		_, err := tc.client.ListActorSnapshotTags(context.Background(), &ateapipb.ListActorSnapshotTagsRequest{PageToken: "%%%"})
 		assertGrpcError(t, err, codes.InvalidArgument, "invalid page_token")
 	})
 }
@@ -2009,30 +1987,31 @@ func TestSuspendActor(t *testing.T) {
 	tc := setupTest(t, ns)
 	defer tc.cleanup()
 
-	createTemplate(t, tc, ns)
+	template := createTemplate(t, tc, ns)
 
 	workerName := createWorkerPod(t, tc, ns, "worker-1", "node1", "pool1")
 	name := "id1"
 
-	_, err := tc.client.CreateActor(context.Background(), &ateapipb.CreateActorRequest{Actor: &ateapipb.Actor{
+	if _, err := tc.client.CreateActor(context.Background(), &ateapipb.CreateActorRequest{Actor: &ateapipb.Actor{
 		Metadata:      &ateapipb.ResourceMetadata{Atespace: testAtespace, Name: name},
 		ActorTemplate: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "tmpl1"},
-	}})
-	if err != nil {
+	}}); err != nil {
 		t.Fatalf("CreateActor failed: %v", err)
 	}
 
 	// Resume first to make it running
-	running, err := tc.client.ResumeActor(context.Background(), &ateapipb.ResumeActorRequest{
+	if _, err := tc.client.ResumeActor(context.Background(), &ateapipb.ResumeActorRequest{
 		Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: name},
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("ResumeActor failed: %v", err)
 	}
 
-	// Suspend
+	// Suspend, tagging the external snapshot it writes. Tags are only ever born
+	// here, in the same transaction that finalizes the suspend.
+	const tagName = "before-upgrade"
 	suspended, err := tc.client.SuspendActor(context.Background(), &ateapipb.SuspendActorRequest{
 		Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: name},
+		Tag:   &ateapipb.SuspendActorRequest_Tag{Name: tagName},
 	})
 	if err != nil {
 		t.Fatalf("SuspendActor failed: %v", err)
@@ -2042,49 +2021,53 @@ func TestSuspendActor(t *testing.T) {
 	if !tc.fakeAtelet.CheckpointCalled {
 		t.Errorf("expected atelet Checkpoint to be called")
 	}
-	ref := suspended.GetActor().GetStatus().GetLatestSnapshot()
-	if ref.GetName() == "" {
-		t.Fatalf("SuspendActor returned no ActorSnapshot reference: %v", suspended)
+	sourceActor := suspended.GetActor()
+	snapshotURI := sourceActor.GetStatus().GetExternalSnapshot().GetSnapshotUri()
+	if snapshotURI == "" {
+		t.Fatalf("SuspendActor wrote no external snapshot: %v", suspended)
 	}
-	snapshotRef := ref
-	snapshot, err := tc.client.GetActorSnapshot(context.Background(), &ateapipb.GetActorSnapshotRequest{ActorSnapshot: snapshotRef})
+	if got := sourceActor.GetStatus().GetCurrentSnapshotTag(); got != nil {
+		t.Errorf("current snapshot tag = %v, want unset: the Actor owns the snapshot it just wrote", got)
+	}
+
+	// The tag owns a copy of its own, at a location derived from its name, so
+	// the Actor's later suspends and its deletion cannot collect it.
+	tagSnapshotURI := "gs://fake-fake-fake/snapshots/" + testAtespace + "/tag-" + tagName
+	assertSnapshotPresent(t, tc, "the Actor's", snapshotURI)
+	assertSnapshotPresent(t, tc, "the tag's", tagSnapshotURI)
+
+	tagRef := &ateapipb.ObjectRef{Atespace: testAtespace, Name: tagName}
+	tagged, err := tc.client.GetActorSnapshotTag(context.Background(), &ateapipb.GetActorSnapshotTagRequest{ActorSnapshotTag: tagRef})
 	if err != nil {
-		t.Fatalf("GetActorSnapshot failed: %v", err)
+		t.Fatalf("GetActorSnapshotTag failed: %v", err)
 	}
-	if got := snapshot.GetStatus().GetSourceActorVersion(); got != running.GetActor().GetMetadata().GetVersion() {
-		t.Errorf("snapshot source version = %d, want %d", got, running.GetActor().GetMetadata().GetVersion())
-	}
-	listed, err := tc.client.ListActorSnapshots(context.Background(), &ateapipb.ListActorSnapshotsRequest{Atespace: testAtespace, PageSize: 1})
-	if err != nil || len(listed.GetActorSnapshots()) != 1 {
-		t.Fatalf("ListActorSnapshots = (%v, %v), want one", listed, err)
-	}
-	tagRef := &ateapipb.ObjectRef{Atespace: testAtespace, Name: "before-upgrade"}
-	tagged, err := tc.client.CreateActorSnapshotTag(context.Background(), &ateapipb.CreateActorSnapshotTagRequest{
-		ActorSnapshotTag: &ateapipb.ActorSnapshotTag{
-			Metadata: &ateapipb.ResourceMetadata{Atespace: testAtespace, Name: "before-upgrade"},
-			Snapshot: snapshotRef,
-			Scope:    ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_ATESPACE,
+	wantTag := &ateapipb.ActorSnapshotTag{
+		Metadata: &ateapipb.ResourceMetadata{Atespace: testAtespace, Name: tagName},
+		Scope:    ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_ATESPACE,
+		Status: &ateapipb.ActorSnapshotTagStatus{
+			Snapshot:         &ateapipb.ExternalSnapshot{SnapshotUri: tagSnapshotURI, ContentScope: sourceActor.GetStatus().GetExternalSnapshot().GetContentScope()},
+			ActorTemplateUid: template.GetMetadata().GetUid(),
 		},
-	})
-	if err != nil || !proto.Equal(tagged.GetSnapshot(), ref) {
-		t.Fatalf("CreateActorSnapshotTag = (%v, %v), want tag for snapshot", tagged, err)
 	}
-	if _, err := tc.client.CreateActorSnapshotTag(context.Background(), &ateapipb.CreateActorSnapshotTagRequest{
-		ActorSnapshotTag: &ateapipb.ActorSnapshotTag{
-			Metadata: &ateapipb.ResourceMetadata{Atespace: "other", Name: "cross-atespace"},
-			Snapshot: snapshotRef,
-			Scope:    ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_ATESPACE,
-		},
-	}); status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("cross-atespace CreateActorSnapshotTag status = %v, want FailedPrecondition", status.Code(err))
+	if diff := cmp.Diff(wantTag, tagged, protocmp.Transform(), ignoreUID, ignoreVersion, ignoreTimestamps); diff != "" {
+		t.Errorf("tag created by the suspend mismatch (-want +got):\n%s", diff)
 	}
-	if _, err := tc.client.CreateActor(context.Background(), &ateapipb.CreateActorRequest{
+	listed, err := tc.client.ListActorSnapshotTags(context.Background(), &ateapipb.ListActorSnapshotTagsRequest{Atespace: testAtespace, PageSize: 1})
+	if err != nil || len(listed.GetActorSnapshotTags()) != 1 {
+		t.Fatalf("ListActorSnapshotTags = (%v, %v), want one", listed, err)
+	}
+
+	// A tag is born ATESPACE-scoped, so it cannot seed an Actor elsewhere until
+	// it is published.
+	createAtespace(t, tc, "other")
+	crossAtespaceClone := &ateapipb.CreateActorRequest{
 		Actor: &ateapipb.Actor{
 			Metadata:          &ateapipb.ResourceMetadata{Atespace: "other", Name: "cross-atespace"},
 			ActorTemplate:     &ateapipb.ObjectRef{Atespace: testAtespace, Name: "tmpl1"},
 			SourceSnapshotTag: tagRef,
 		},
-	}); status.Code(err) != codes.FailedPrecondition {
+	}
+	if _, err := tc.client.CreateActor(context.Background(), crossAtespaceClone); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("cross-atespace CreateActor status = %v, want FailedPrecondition", status.Code(err))
 	}
 	tagged.Scope = ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_PUBLISHED
@@ -2094,20 +2077,15 @@ func TestSuspendActor(t *testing.T) {
 	if err != nil || updated.GetScope() != ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_PUBLISHED {
 		t.Fatalf("UpdateActorSnapshotTag = (%v, %v), want published", updated, err)
 	}
-	if got, err := tc.client.GetActorSnapshotTag(context.Background(), &ateapipb.GetActorSnapshotTagRequest{ActorSnapshotTag: tagRef}); err != nil || !proto.Equal(got.GetSnapshot(), ref) {
-		t.Fatalf("tag after publication = (%v, %v), want same address", got, err)
+	if updated.GetStatus().GetSnapshot().GetSnapshotUri() != tagSnapshotURI {
+		t.Errorf("tag snapshot uri after publication = %q, want %q", updated.GetStatus().GetSnapshot().GetSnapshotUri(), tagSnapshotURI)
 	}
-	createAtespace(t, tc, "other")
-	if _, err := tc.client.CreateActor(context.Background(), &ateapipb.CreateActorRequest{
-		Actor: &ateapipb.Actor{
-			Metadata:          &ateapipb.ResourceMetadata{Atespace: "other", Name: "cross-atespace"},
-			ActorTemplate:     &ateapipb.ObjectRef{Atespace: testAtespace, Name: "tmpl1"},
-			SourceSnapshotTag: tagRef,
-		},
-	}); err != nil {
+	if _, err := tc.client.CreateActor(context.Background(), crossAtespaceClone); err != nil {
 		t.Fatalf("CreateActor from published tag failed: %v", err)
 	}
 
+	// A clone borrows the tag's external snapshot rather than copying it, and
+	// records that it is borrowing so that its own lifecycle never releases it.
 	clone, err := tc.client.CreateActor(context.Background(), &ateapipb.CreateActorRequest{
 		Actor: &ateapipb.Actor{
 			Metadata:          &ateapipb.ResourceMetadata{Atespace: testAtespace, Name: "clone"},
@@ -2116,33 +2094,44 @@ func TestSuspendActor(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("CreateActor from snapshot failed: %v", err)
+		t.Fatalf("CreateActor from tag failed: %v", err)
 	}
-	if !proto.Equal(clone.GetStatus().GetLatestSnapshot(), ref) {
-		t.Fatalf("clone latest snapshot = %v, want %v", clone.GetStatus().GetLatestSnapshot(), ref)
+	if got := clone.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != tagSnapshotURI {
+		t.Errorf("clone snapshot uri = %q, want the tag's %q", got, tagSnapshotURI)
+	}
+	if !proto.Equal(clone.GetStatus().GetCurrentSnapshotTag(), tagRef) {
+		t.Errorf("clone current snapshot tag = %v, want %v", clone.GetStatus().GetCurrentSnapshotTag(), tagRef)
 	}
 	if !proto.Equal(clone.GetSourceSnapshotTag(), tagRef) {
-		t.Fatalf("clone source snapshot tag = %v, want %v", clone.GetSourceSnapshotTag(), tagRef)
-	}
-	if got := clone.GetStatus().GetSourceSnapshot(); !proto.Equal(got.GetSnapshot(), ref) || got.GetSnapshotUid() != snapshot.GetMetadata().GetUid() {
-		t.Fatalf("clone source snapshot = %v, want snapshot %v, uid %v", got, ref, snapshot.GetMetadata().GetUid())
+		t.Errorf("clone source snapshot tag = %v, want %v", clone.GetSourceSnapshotTag(), tagRef)
 	}
 	if _, err := tc.client.ResumeActor(context.Background(), &ateapipb.ResumeActorRequest{Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "clone"}}); err != nil {
 		t.Fatalf("ResumeActor clone failed: %v", err)
 	}
 	if !tc.fakeAtelet.RestoreCalled {
-		t.Error("resuming clone did not restore its source ActorSnapshot")
+		t.Error("resuming clone did not restore its source external snapshot")
 	}
+
+	// The clone's first suspend writes a snapshot of its own and stops
+	// borrowing, which is what makes the tag's snapshot collectable later.
 	cloneSuspended, err := tc.client.SuspendActor(context.Background(), &ateapipb.SuspendActorRequest{Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "clone"}})
 	if err != nil {
 		t.Fatalf("SuspendActor clone failed: %v", err)
 	}
-	if cloneSuspended.GetActor().GetStatus().GetLatestSnapshot().GetName() == ref.GetName() {
-		t.Fatal("clone suspension reused its source snapshot")
+	cloneSnapshotURI := cloneSuspended.GetActor().GetStatus().GetExternalSnapshot().GetSnapshotUri()
+	if cloneSnapshotURI == tagSnapshotURI || cloneSnapshotURI == "" {
+		t.Errorf("clone snapshot uri after suspension = %q, want an external snapshot of its own", cloneSnapshotURI)
 	}
-	listed, err = tc.client.ListActorSnapshots(context.Background(), &ateapipb.ListActorSnapshotsRequest{Atespace: testAtespace})
-	if err != nil || len(listed.GetActorSnapshots()) != 2 {
-		t.Fatalf("ListActorSnapshots after clone suspension = (%v, %v), want two", listed, err)
+	if got := cloneSuspended.GetActor().GetStatus().GetCurrentSnapshotTag(); got != nil {
+		t.Errorf("clone current snapshot tag after suspension = %v, want unset", got)
+	}
+	// It stopped borrowing without releasing what it had borrowed.
+	assertSnapshotPresent(t, tc, "the tag's", tagSnapshotURI)
+	assertSnapshotPresent(t, tc, "the clone's own", cloneSnapshotURI)
+	// The untagged suspend created no tag.
+	listed, err = tc.client.ListActorSnapshotTags(context.Background(), &ateapipb.ListActorSnapshotTagsRequest{Atespace: testAtespace})
+	if err != nil || len(listed.GetActorSnapshotTags()) != 1 {
+		t.Fatalf("ListActorSnapshotTags after clone suspension = (%v, %v), want one", listed, err)
 	}
 
 	getResp, err := tc.client.GetActor(context.Background(), &ateapipb.GetActorRequest{
@@ -2154,7 +2143,10 @@ func TestSuspendActor(t *testing.T) {
 	want := &ateapipb.Actor{
 		Metadata:      &ateapipb.ResourceMetadata{Name: name, Atespace: testAtespace},
 		ActorTemplate: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "tmpl1"},
-		Status:        &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
+		Status: &ateapipb.ActorStatus{
+			State:            ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
+			ExternalSnapshot: &ateapipb.ExternalSnapshot{SnapshotUri: snapshotURI, ContentScope: sourceActor.GetStatus().GetExternalSnapshot().GetContentScope()},
+		},
 	}
 
 	if diff := cmp.Diff(want, getResp,
@@ -2162,25 +2154,31 @@ func TestSuspendActor(t *testing.T) {
 		ignoreUID,
 		ignoreVersion,
 		ignoreTimestamps,
-		protocmp.IgnoreFields(&ateapipb.ActorStatus{}, "latest_snapshot"),
 	); diff != "" {
 		t.Errorf("GetActor response mismatch (-want +got):\n%s", diff)
 	}
+	// The tag outlives the Actor it was taken from: it holds the snapshot on its
+	// own, and deleting it is what ends that snapshot's life.
 	if _, err := tc.client.DeleteActor(context.Background(), &ateapipb.DeleteActorRequest{Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: name}}); err != nil {
 		t.Fatalf("DeleteActor source failed: %v", err)
 	}
 	if _, err := tc.client.GetActorSnapshotTag(context.Background(), &ateapipb.GetActorSnapshotTagRequest{ActorSnapshotTag: tagRef}); err != nil {
 		t.Fatalf("source snapshot tag disappeared with source Actor: %v", err)
 	}
+	// The Actor took only what it owned with it.
+	assertSnapshotCollected(t, tc, "the deleted Actor's", snapshotURI)
+	assertSnapshotPresent(t, tc, "the tag's", tagSnapshotURI)
+
 	if deleted, err := tc.client.DeleteActorSnapshotTag(context.Background(), &ateapipb.DeleteActorSnapshotTagRequest{ActorSnapshotTag: tagRef}); err != nil || deleted.GetMetadata().GetName() != tagRef.GetName() {
 		t.Fatalf("DeleteActorSnapshotTag = (%v, %v)", deleted, err)
 	}
 	if _, err := tc.client.GetActorSnapshotTag(context.Background(), &ateapipb.GetActorSnapshotTagRequest{ActorSnapshotTag: tagRef}); status.Code(err) != codes.NotFound {
 		t.Fatalf("deleted tag status = %v, want NotFound", status.Code(err))
 	}
-	if _, err := tc.client.GetActorSnapshot(context.Background(), &ateapipb.GetActorSnapshotRequest{ActorSnapshot: snapshotRef}); err != nil {
-		t.Fatalf("snapshot metadata disappeared after tag deletion: %v", err)
-	}
+	// Deleting the tag is what ends its snapshot's life. The clone that
+	// borrowed it has one of its own by now and is unaffected.
+	assertSnapshotCollected(t, tc, "the deleted tag's", tagSnapshotURI)
+	assertSnapshotPresent(t, tc, "the clone's own", cloneSnapshotURI)
 }
 
 // TestPauseActor tests the full workflow of pausing a running actor.
@@ -2830,20 +2828,10 @@ func TestSuspendActor_FromPaused(t *testing.T) {
 	if actor.GetStatus().GetLocalSnapshotInfo() != nil {
 		t.Errorf("LocalSnapshotInfo = %v, want cleared (node pinning must not survive suspend)", actor.GetStatus().GetLocalSnapshotInfo())
 	}
-	ref := actor.GetStatus().GetLatestSnapshot()
-	if ref.GetName() == "" {
-		t.Fatalf("SuspendActor returned no ActorSnapshot reference: %v", suspended)
-	}
-	snapshot, err := tc.client.GetActorSnapshot(context.Background(), &ateapipb.GetActorSnapshotRequest{
-		ActorSnapshot: ref,
-	})
-	if err != nil {
-		t.Fatalf("GetActorSnapshot failed: %v", err)
-	}
-	if got, want := snapshot.GetStatus().GetSnapshotUri(), upload.GetDestinationSnapshotUri(); got != want {
+	if got, want := actor.GetStatus().GetExternalSnapshot().GetSnapshotUri(), upload.GetDestinationSnapshotUri(); got != want {
 		t.Errorf("snapshot URI = %q, want the upload destination %q", got, want)
 	}
-	if got := snapshot.GetStatus().GetContentScope(); got != ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL {
+	if got := actor.GetStatus().GetExternalSnapshot().GetContentScope(); got != ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL {
 		t.Errorf("snapshot ContentScope = %v, want FULL", got)
 	}
 }

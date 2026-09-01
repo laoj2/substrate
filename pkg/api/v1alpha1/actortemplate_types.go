@@ -636,7 +636,11 @@ type ActorTemplateStatus struct {
 
 	GoldenActorID        string      `json:"goldenActorID,omitempty"`
 	TakeGoldenSnapshotAt metav1.Time `json:"takeGoldenSnapshotAt,omitempty"`
-	GoldenSnapshot       string      `json:"goldenSnapshot,omitempty"`
+
+	// GoldenSnapshotURI locates the external snapshot the golden actor wrote
+	// in object storage. The golden actor keeps owning those objects; the
+	// template only points at them.
+	GoldenSnapshotURI string `json:"goldenSnapshotURI,omitempty"`
 
 	// conditions defines the status conditions array
 	// +optional

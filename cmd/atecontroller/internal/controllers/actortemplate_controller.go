@@ -162,13 +162,13 @@ func (r *ActorTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, fmt.Errorf("while suspending golden actor: %w", err)
 		}
 
-		snapshot := resp.GetActor().GetStatus().GetLatestSnapshot()
-		if snapshot == nil {
-			return ctrl.Result{}, fmt.Errorf("suspending golden actor returned no ActorSnapshot")
+		snapshotURI := resp.GetActor().GetStatus().GetExternalSnapshot().GetSnapshotUri()
+		if snapshotURI == "" {
+			return ctrl.Result{}, fmt.Errorf("suspending golden actor produced no external snapshot")
 		}
 
 		// Transition to PhaseReady
-		at.Status.GoldenSnapshot = snapshot.GetName()
+		at.Status.GoldenSnapshotURI = snapshotURI
 		at.Status.Phase = atev1alpha1.PhaseReady
 		meta.SetStatusCondition(&at.Status.Conditions, metav1.Condition{
 			Type:    "Ready",

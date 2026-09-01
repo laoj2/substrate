@@ -76,11 +76,11 @@ func (s *ServiceImpl) CreateActor(ctx context.Context, inActor *ateapipb.Actor) 
 		return nil, err
 	}
 
-	// If a source snapshot tag is requested, resolve it to a concrete
-	// snapshot.
-	var sourceSnapshotStatus *ateapipb.ActorSourceSnapshotStatus
-	if tag := inActor.GetSourceSnapshotTag(); tag != nil {
-		sourceSnapshotStatus, err = s.resolveSnapshotSource(ctx, inActor.GetMetadata().GetAtespace(), tag, template)
+	// If a source snapshot tag is requested, resolve it to the external
+	// snapshot the new Actor starts from.
+	var sourceTag *ateapipb.ActorSnapshotTag
+	if tagRef := inActor.GetSourceSnapshotTag(); tagRef != nil {
+		sourceTag, err = s.resolveSnapshotTagSource(ctx, inActor.GetMetadata().GetAtespace(), tagRef, template)
 		if err != nil {
 			return nil, err
 		}
@@ -98,10 +98,16 @@ func (s *ServiceImpl) CreateActor(ctx context.Context, inActor *ateapipb.Actor) 
 	// Verify that the result is properly valid before storing it.
 	outActor := proto.CloneOf(inActor)
 	outActor.Status = &ateapipb.ActorStatus{
-		State:          ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
-		ActorVolumes:   initVols,
-		LatestSnapshot: sourceSnapshotStatus.GetSnapshot(),
-		SourceSnapshot: sourceSnapshotStatus,
+		State:        ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
+		ActorVolumes: initVols,
+	}
+	if sourceTag != nil {
+		// The Actor starts out borrowing the tag's external snapshot rather
+		// than copying it. current_snapshot_tag records that the tag, not this
+		// Actor, owns those objects, until the Actor's first suspend: where
+		// we'll write a new snapshot and it'll be owned by the actor.
+		outActor.Status.ExternalSnapshot = proto.CloneOf(sourceTag.GetStatus().GetSnapshot())
+		outActor.Status.CurrentSnapshotTag = resources.ActorSnapshotTagRefFromActorSnapshotTag(sourceTag).ToObjectRef()
 	}
 	if errs := validateActorUpdate(ctx, field.NewPath("actor"), outActor, inActor, true); len(errs) > 0 {
 		return nil, toGRPCInternalError(errs)
@@ -122,35 +128,28 @@ func (s *ServiceImpl) CreateActor(ctx context.Context, inActor *ateapipb.Actor) 
 	return stored, nil
 }
 
-// resolveSnapshotSource resolves a CreateActor request's source snapshot tag
-// and checks that its scope and ActorSnapshot are compatible with creating
-// an Actor in actorAtespace from template.
-func (s *ServiceImpl) resolveSnapshotSource(ctx context.Context, actorAtespace string, tagRef *ateapipb.ObjectRef, template *ateapipb.ActorTemplate) (*ateapipb.ActorSourceSnapshotStatus, error) {
+// resolveSnapshotTagSource resolves a CreateActor request's source snapshot tag
+// and checks that the tag is usable for creating an Actor in actorAtespace
+// from template.
+func (s *ServiceImpl) resolveSnapshotTagSource(ctx context.Context, actorAtespace string, tagRef *ateapipb.ObjectRef, template *ateapipb.ActorTemplate) (*ateapipb.ActorSnapshotTag, error) {
 	tag, err := s.store.GetActorSnapshotTag(ctx, resources.ActorSnapshotTagRefFromObjectRef(tagRef))
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, status.Error(codes.NotFound, "ActorSnapshot not found")
+		return nil, status.Error(codes.NotFound, "ActorSnapshotTag not found")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("while getting actor snapshot tag: %w", err)
 	}
-	snapshot, err := s.GetActorSnapshot(ctx, resources.ActorSnapshotRefFromObjectRef(tag.GetSnapshot()))
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, status.Error(codes.NotFound, "ActorSnapshot not found")
-	}
-	if err != nil {
-		return nil, fmt.Errorf("while getting actor snapshot: %w", err)
-	}
 	switch tag.GetScope() {
 	case ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_ATESPACE:
 		if tag.GetMetadata().GetAtespace() != actorAtespace {
-			return nil, status.Error(codes.FailedPrecondition, "ActorSnapshot tag is not published outside its Atespace")
+			return nil, status.Error(codes.FailedPrecondition, "ActorSnapshotTag is not published outside its Atespace")
 		}
 	case ateapipb.ActorSnapshotTagScope_ACTOR_SNAPSHOT_TAG_SCOPE_PUBLISHED:
 	default:
-		return nil, status.Error(codes.FailedPrecondition, "source ActorSnapshot tag has an invalid scope")
+		return nil, status.Error(codes.FailedPrecondition, "source ActorSnapshotTag has an invalid scope")
 	}
 	// TODO: Permit compatible DATA snapshots when runtimes can extract portable data.
-	if snapshot.GetStatus().GetActorTemplateUid() != template.GetMetadata().GetUid() {
+	if tag.GetStatus().GetActorTemplateUid() != template.GetMetadata().GetUid() {
 		return nil, status.Error(codes.FailedPrecondition, "ActorSnapshot requires the source ActorTemplate")
 	}
 	for _, volume := range template.GetVolumes() {
@@ -159,13 +158,7 @@ func (s *ServiceImpl) resolveSnapshotSource(ctx context.Context, actorAtespace s
 			return nil, status.Error(codes.FailedPrecondition, "ActorSnapshot cloning does not support external volumes")
 		}
 	}
-	return &ateapipb.ActorSourceSnapshotStatus{
-		Snapshot: &ateapipb.ObjectRef{
-			Atespace: snapshot.GetMetadata().GetAtespace(),
-			Name:     snapshot.GetMetadata().GetName(),
-		},
-		SnapshotUid: snapshot.GetMetadata().GetUid(),
-	}, nil
+	return tag, nil
 }
 
 func validateCreateActorRequest(ctx context.Context, req *ateapipb.CreateActorRequest) field.ErrorList {
@@ -281,7 +274,29 @@ func (s *RPCService) UpdateActor(ctx context.Context, req *ateapipb.UpdateActorR
 }
 
 func (s *ServiceImpl) UpdateActor(ctx context.Context, actorRef resources.ActorRef, precondition store.Precondition, mutate func(*ateapipb.Actor) error) (*ateapipb.Actor, error) {
-	storedActor, err := s.store.UpdateActor(ctx, actorRef, precondition, func(toUpdate *ateapipb.Actor) error {
+	storedActor, err := s.store.UpdateActor(ctx, actorRef, precondition, validatedActorMutation(ctx, mutate))
+	if err != nil {
+		return nil, updateActorError(actorRef, err)
+	}
+	return storedActor, nil
+}
+
+func (s *ServiceImpl) UpdateActorAndTag(ctx context.Context, actorRef resources.ActorRef, precondition store.Precondition, mutate func(*ateapipb.Actor) error, tag *ateapipb.ActorSnapshotTag) (*ateapipb.Actor, error) {
+	storedActor, err := s.store.UpdateActorAndTag(ctx, actorRef, precondition, validatedActorMutation(ctx, mutate), tag)
+	if err != nil {
+		// Tag's errors
+		if errors.Is(err, store.ErrAlreadyExists) || errors.Is(err, store.ErrFailedPrecondition) {
+			return nil, err
+		}
+		return nil, updateActorError(actorRef, err)
+	}
+	return storedActor, nil
+}
+
+// validatedActorMutation wraps mutate so that the actor it produces is
+// validated against the stored one before the store writes it.
+func validatedActorMutation(ctx context.Context, mutate func(*ateapipb.Actor) error) func(*ateapipb.Actor) error {
+	return func(toUpdate *ateapipb.Actor) error {
 		// Apply the mutation function to the stored value.
 		oldVal := proto.CloneOf(toUpdate)
 		if err := mutate(toUpdate); err != nil {
@@ -302,23 +317,23 @@ func (s *ServiceImpl) UpdateActor(ctx context.Context, actorRef resources.ActorR
 		}
 
 		return nil
-	})
-	if err != nil {
-		if errors.Is(err, store.ErrVersionConflict) {
-			return nil, status.Error(codes.Aborted, "concurrent update conflict, please retry")
-		}
-		if errors.Is(err, store.ErrUIDConflict) {
-			return nil, status.Error(codes.Aborted, "concurrent update conflict, please retry")
-		}
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "actor %s not found", actorRef)
-		}
-		if errors.Is(err, store.ErrPreconditionRequired) {
-			return nil, status.Errorf(codes.InvalidArgument, "while updating actor %s: %v", actorRef, err)
-		}
-		return nil, fmt.Errorf("while updating actor: %w", err)
 	}
-	return storedActor, nil
+}
+
+func updateActorError(actorRef resources.ActorRef, err error) error {
+	if errors.Is(err, store.ErrVersionConflict) {
+		return status.Error(codes.Aborted, "concurrent update conflict, please retry")
+	}
+	if errors.Is(err, store.ErrUIDConflict) {
+		return status.Error(codes.Aborted, "concurrent update conflict, please retry")
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		return status.Errorf(codes.NotFound, "actor %s not found", actorRef)
+	}
+	if errors.Is(err, store.ErrPreconditionRequired) {
+		return status.Errorf(codes.InvalidArgument, "while updating actor %s: %v", actorRef, err)
+	}
+	return fmt.Errorf("while updating actor: %w", err)
 }
 
 func validateUpdateActorRequest(ctx context.Context, req *ateapipb.UpdateActorRequest) field.ErrorList {
@@ -449,13 +464,13 @@ func validateResumeActorRequest(req *ateapipb.ResumeActorRequest) field.ErrorLis
 }
 
 func (s *RPCService) SuspendActor(ctx context.Context, req *ateapipb.SuspendActorRequest) (*ateapipb.SuspendActorResponse, error) {
-	if errs := validateSuspendActorRequest(req); len(errs) > 0 {
+	if errs := validateSuspendActorRequest(ctx, req); len(errs) > 0 {
 		return nil, toGRPCStatusError(errs)
 	}
 	actorRef := resources.ActorRefFromObjectRef(req.GetActor())
 	setSpanActorRefAttributes(ctx, actorRef)
 
-	actor, err := s.actorWorkflow.SuspendActor(ctx, actorRef)
+	actor, err := s.actorWorkflow.SuspendActor(ctx, actorRef, req.GetTag().GetName())
 	if err != nil {
 		if errors.Is(err, store.ErrVersionConflict) {
 			return nil, status.Error(codes.Aborted, "concurrent update conflict, please retry")
@@ -463,13 +478,16 @@ func (s *RPCService) SuspendActor(ctx context.Context, req *ateapipb.SuspendActo
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "Actor %s not found", actorRef)
 		}
+		if errors.Is(err, store.ErrAlreadyExists) {
+			return nil, status.Errorf(codes.AlreadyExists, "ActorSnapshotTag %s/%s already exists", actorRef.Atespace, req.GetTag().GetName())
+		}
 		return nil, err
 	}
 	setSpanActorAttributes(ctx, actor)
 	return &ateapipb.SuspendActorResponse{Actor: actor}, nil
 }
 
-func validateSuspendActorRequest(req *ateapipb.SuspendActorRequest) field.ErrorList {
+func validateSuspendActorRequest(ctx context.Context, req *ateapipb.SuspendActorRequest) field.ErrorList {
 	var fldPath *field.Path
 	var errs field.ErrorList
 
@@ -478,6 +496,8 @@ func validateSuspendActorRequest(req *ateapipb.SuspendActorRequest) field.ErrorL
 	} else {
 		errs = append(errs, resources.ValidateObjectRef(val, fldPath)...)
 	}
+	// TODO: tag.name is not validated yet; see the TODO in the proto.
+	errs = append(errs, Validate_SuspendActorRequest(ctx, operation.Operation{Type: operation.Create}, nil, req, nil)...)
 	return errs
 }
 
