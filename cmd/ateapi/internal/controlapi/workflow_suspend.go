@@ -23,12 +23,14 @@ import (
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/internal/ateattr"
+	"github.com/agent-substrate/substrate/internal/objectstore"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // SuspendActor executes the workflow to suspend a running or paused actor:
@@ -149,7 +151,6 @@ func (w *ActorWorkflow) ensureMarkedSuspending(ctx context.Context, actorRef res
 	}
 	storedActor, err := w.store.UpdateActor(ctx, actorRef, store.PreconditionFrom(actor), func(toUpdate *ateapipb.Actor) error {
 		toUpdate.Status.State = ateapipb.ActorState_ACTOR_STATE_SUSPENDING
-		toUpdate.Status.InProgressSnapshotSourceActorVersion = toUpdate.GetMetadata().GetVersion()
 		toUpdate.Status.InProgressSnapshotName = name
 		return nil
 	})
@@ -338,8 +339,8 @@ func (w *ActorWorkflow) ensureVolumesDetached(ctx context.Context, actor *ateapi
 }
 
 // ensureSuspendedFinalized releases the actor's worker (only when it is still
-// owned by this actor), promotes the in-progress snapshot to an
-// ActorSnapshot, and commits SUSPENDED with the assignment cleared in a
+// owned by this actor), records the in-progress snapshot as the actor's
+// external snapshot, and commits SUSPENDED with the assignment cleared in a
 // single update. It re-reads the actor first so an out-of-band transition
 // (e.g. the syncer crashing the actor after its worker died) is not
 // overwritten: with no assignment left there is nothing to finalize.
@@ -365,41 +366,39 @@ func (w *ActorWorkflow) ensureSuspendedFinalized(ctx context.Context, actorRef r
 		}
 	}
 
-	// 2. Finalize the actor: record the snapshot and mark it SUSPENDED. This
+	// 2. Finalize the actor: record its new external snapshot and mark it SUSPENDED. This
 	// must run even with no worker assignment (nothing to free), or the actor
 	// would be left SUSPENDING forever with the workflow reporting success.
 	snapshotName := latestActor.GetStatus().GetInProgressSnapshotName()
+	externalSnapshot := latestActor.GetStatus().GetExternalSnapshot()
 	if snapshotName != "" {
 		// The same inputs CallAteletSuspend used, so the recorded URI is
-		// where the bytes were actually written.
-		snapshotURI, err := inProgressSnapshotURI(actorTemplate, actorRef.Atespace, snapshotName)
+		// where the external snapshot was actually written.
+		uri, err := inProgressSnapshotURI(actorTemplate, actorRef.Atespace, snapshotName)
 		if err != nil {
 			return nil, err
 		}
-		snapshot := &ateapipb.ActorSnapshot{
-			Metadata: &ateapipb.ResourceMetadata{Atespace: actorRef.Atespace, Name: snapshotName},
-			Status: &ateapipb.ActorSnapshotStatus{
-				SourceActor:        actorRef.ToObjectRef(),
-				SourceActorUid:     latestActor.GetMetadata().GetUid(),
-				SourceActorVersion: latestActor.GetStatus().GetInProgressSnapshotSourceActorVersion(),
-				ActorTemplate:      actorTemplateObjectRef(latestActor),
-				ActorTemplateUid:   actorTemplate.GetMetadata().GetUid(),
-				ContentScope:       commitSnapshotScope(actorRef.Atespace, actorTemplate),
-				SnapshotUri:        snapshotURI.String(),
-			},
-		}
-		// ErrAlreadyExists means a previous attempt crashed after creating
-		// the snapshot record; the persisted record is authoritative.
-		if _, err := w.store.CreateActorSnapshot(ctx, snapshot); err != nil && !errors.Is(err, store.ErrAlreadyExists) {
-			return nil, err
+		externalSnapshot = &ateapipb.ExternalSnapshot{
+			SnapshotUri:  uri.String(),
+			ContentScope: commitSnapshotScope(actorRef.Atespace, actorTemplate),
 		}
 	}
+
+	// 3. Release the external snapshot this suspend replaces (latestActor.externalSnapshot)
+	// before it's overwritten by externalSnapshot in the commit phase below.
+	if err := w.releaseReplacedSnapshot(ctx, latestActor, externalSnapshot); err != nil {
+		return nil, err
+	}
+
+	// 4. Commit the actor.
 	storedActor, err := w.store.UpdateActor(ctx, actorRef, store.PreconditionFrom(latestActor), func(toUpdate *ateapipb.Actor) error {
 		toUpdate.Status.State = ateapipb.ActorState_ACTOR_STATE_SUSPENDED
 		if snapshotName != "" {
-			toUpdate.Status.LatestSnapshot = &ateapipb.ObjectRef{Atespace: actorRef.Atespace, Name: snapshotName}
+			toUpdate.Status.ExternalSnapshot = proto.CloneOf(externalSnapshot)
+			// The actor now owns an external snapshot of its own, so it is no
+			// longer borrowing the tag it was created from (if any).
+			toUpdate.Status.CurrentSnapshotTag = nil
 			toUpdate.Status.InProgressSnapshotName = ""
-			toUpdate.Status.InProgressSnapshotSourceActorVersion = 0
 		}
 		toUpdate.Status.WorkerAssignment = nil
 		toUpdate.Status.LocalSnapshotInfo = nil
@@ -412,4 +411,36 @@ func (w *ActorWorkflow) ensureSuspendedFinalized(ctx context.Context, actorRef r
 		return nil, err
 	}
 	return storedActor, nil
+}
+
+// releaseReplacedSnapshot releases the external snapshot the actor held before
+// this suspend.
+// It runs while the actor record still points at the old snapshot, so an
+// interrupted release is rediscoverable: the retry deletes whatever is left.
+// An actor that borrowed its current snapshot from a tag releases nothing —
+// the tag owns that snapshot and outlives the actor.
+func (w *ActorWorkflow) releaseReplacedSnapshot(ctx context.Context, actor *ateapipb.Actor, nextSnapshot *ateapipb.ExternalSnapshot) (err error) {
+	ctx, done := stepSpan(ctx, "ReleaseReplacedSnapshot")
+	defer func() { err = done(err) }()
+
+	previous := actor.GetStatus().GetExternalSnapshot().GetSnapshotUri()
+	switch {
+	case w.objectStore == nil:
+		markSkipped(ctx, "no object store configured")
+		return nil
+	case previous == "":
+		markSkipped(ctx, "the actor held no external snapshot")
+		return nil
+	case previous == nextSnapshot.GetSnapshotUri():
+		markSkipped(ctx, "the actor's external snapshot is unchanged")
+		return nil
+	case actor.GetStatus().GetCurrentSnapshotTag() != nil:
+		markSkipped(ctx, "the replaced external snapshot is owned by a tag")
+		return nil
+	}
+	uri, err := resources.ParseSnapshotURI(previous)
+	if err != nil {
+		return fmt.Errorf("while parsing the replaced external snapshot %q: %w", previous, err)
+	}
+	return objectstore.DeletePrefix(ctx, w.objectStore, uri)
 }

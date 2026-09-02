@@ -163,7 +163,7 @@ func WaitForSubstrateTemplateReady(ctx context.Context, t *testing.T, clients *C
 		})
 		if err == nil {
 			lastStatus = at.GetStatus().GetGoldenSnapshotStatus()
-			if lastStatus.GetGoldenSnapshot() != nil {
+			if lastStatus.GetGoldenSnapshot().GetSnapshotUri() != "" {
 				return
 			}
 			if msg := lastStatus.GetErrorMessage(); msg != "" {

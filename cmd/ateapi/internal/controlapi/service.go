@@ -20,6 +20,7 @@ import (
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/workercache"
+	"github.com/agent-substrate/substrate/internal/objectstore"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/internal/volume"
 	"github.com/agent-substrate/substrate/internal/volume/csi"
@@ -46,6 +47,7 @@ type RPCService struct {
 	instruments           *Instruments
 	mu                    sync.RWMutex
 	volumePlugins         map[string]volume.VolumePluginControlPlane
+	objectStore           objectstore.Store
 }
 
 var _ ateapipb.ControlServer = (*RPCService)(nil)
@@ -59,6 +61,10 @@ type VolumePluginRegistry interface {
 // implements the outward-facing RPC interface.
 //
 // instruments may be nil; the record helpers no-op.
+//
+// objectStore may be nil, which leaves external snapshots in place instead of
+// copying and releasing them. Only tests that never reach those steps pass nil;
+// ate-api always builds one.
 func NewRPCService(
 	persistence store.Interface,
 	workerCache *workercache.Cache,
@@ -70,6 +76,7 @@ func NewRPCService(
 	instruments *Instruments,
 	egressGatewayAddress string,
 	volumePlugins map[string]volume.VolumePluginControlPlane,
+	objectStore objectstore.Store,
 ) *RPCService {
 	impl := newServiceImpl(persistence, storageClassLister)
 	s := &RPCService{
@@ -81,8 +88,9 @@ func NewRPCService(
 		dialer:                dialer,
 		instruments:           instruments,
 		volumePlugins:         volumePlugins,
+		objectStore:           objectStore,
 	}
-	s.actorWorkflow = NewActorWorkflow(impl, workerCache, dialer, workerPoolLister, sandboxConfigLister, storageClassLister, instruments, egressGatewayAddress, s)
+	s.actorWorkflow = NewActorWorkflow(impl, workerCache, dialer, workerPoolLister, sandboxConfigLister, storageClassLister, instruments, egressGatewayAddress, s, objectStore)
 	s.workerWorkflow = NewWorkerWorkflow(impl)
 	return s
 }
@@ -98,10 +106,8 @@ type serviceStore interface {
 	GetEgressPolicy(ctx context.Context, actorRef resources.ActorRef) (*ateapipb.EgressPolicy, error)
 	UpdateEgressPolicy(ctx context.Context, actorRef resources.ActorRef, precondition store.Precondition, mutate func(*ateapipb.EgressPolicy) error) (*ateapipb.EgressPolicy, error)
 	DeleteEgressPolicy(ctx context.Context, actorRef resources.ActorRef) (*ateapipb.EgressPolicy, error)
-	GetActorSnapshot(ctx context.Context, snapshotRef resources.ActorSnapshotRef) (*ateapipb.ActorSnapshot, error)
-	ListActorSnapshots(ctx context.Context, atespace string, opts store.ListOptions) (store.ListResponse[*ateapipb.ActorSnapshot], error)
-	CreateActorSnapshotTag(ctx context.Context, snapshotRef resources.ActorSnapshotRef, tag *ateapipb.ActorSnapshotTag) (*ateapipb.ActorSnapshotTag, error)
 	GetActorSnapshotTag(ctx context.Context, tagRef resources.ActorSnapshotTagRef) (*ateapipb.ActorSnapshotTag, error)
+	ListActorSnapshotTags(ctx context.Context, atespace string, opts store.ListOptions) (store.ListResponse[*ateapipb.ActorSnapshotTag], error)
 	UpdateActorSnapshotTag(ctx context.Context, tagRef resources.ActorSnapshotTagRef, precondition store.Precondition, mutate func(toUpdate *ateapipb.ActorSnapshotTag) error) (*ateapipb.ActorSnapshotTag, error)
 	DeleteActorSnapshotTag(ctx context.Context, tagRef resources.ActorSnapshotTagRef) (*ateapipb.ActorSnapshotTag, error)
 	CreateAtespace(ctx context.Context, atespace *ateapipb.Atespace) (*ateapipb.Atespace, error)

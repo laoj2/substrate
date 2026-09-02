@@ -917,58 +917,52 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 		paused       bool
 		onPause      ateapipb.SnapshotContentScope
 		contentScope ateapipb.SnapshotContentScope
-		// goldenSnapshot names the template status's golden snapshot;
-		// seedGolden controls whether the golden ActorSnapshot row it names
-		// exists, and goldenScope the scope it records (zero value UNSPECIFIED
-		// is treated as Full for legacy snapshots).
-		goldenSnapshot string
-		seedGolden     bool
-		goldenScope    ateapipb.SnapshotContentScope
-		wantCode       codes.Code
-		wantGoldenURI  string
+		// goldenURI and goldenScope are the template's recorded golden
+		// external snapshot; an empty URI means the template has none. A zero
+		// scope is treated as Full, the scope a golden snapshot must hold.
+		goldenURI     string
+		goldenScope   ateapipb.SnapshotContentScope
+		wantCode      codes.Code
+		wantGoldenURI string
 	}{
 		{
-			name:           "resolves golden location for Data durable snapshot",
-			fromData:       ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
-			contentScope:   ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
-			goldenSnapshot: "golden-1",
-			seedGolden:     true,
-			goldenScope:    ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
-			wantCode:       codes.OK,
-			wantGoldenURI:  goldenSnapshotURI,
+			name:          "resolves golden location for Data durable snapshot",
+			fromData:      ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
+			contentScope:  ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+			goldenURI:     goldenSnapshotURI,
+			goldenScope:   ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
+			wantCode:      codes.OK,
+			wantGoldenURI: goldenSnapshotURI,
 		},
 		{
-			name:           "resolves golden location for paused actor with Data onPause",
-			fromData:       ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
-			paused:         true,
-			onPause:        ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
-			goldenSnapshot: "golden-1",
-			seedGolden:     true,
-			goldenScope:    ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
-			wantCode:       codes.OK,
-			wantGoldenURI:  goldenSnapshotURI,
+			name:          "resolves golden location for paused actor with Data onPause",
+			fromData:      ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
+			paused:        true,
+			onPause:       ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+			goldenURI:     goldenSnapshotURI,
+			goldenScope:   ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
+			wantCode:      codes.OK,
+			wantGoldenURI: goldenSnapshotURI,
 		},
 		{
 			// A Full pause snapshot restores from its own content; the policy
 			// only governs data-only restores.
-			name:           "leaves golden location empty for paused actor with Full onPause",
-			fromData:       ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
-			paused:         true,
-			onPause:        ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
-			goldenSnapshot: "golden-1",
-			seedGolden:     true,
-			goldenScope:    ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
-			wantCode:       codes.OK,
-			wantGoldenURI:  "",
+			name:          "leaves golden location empty for paused actor with Full onPause",
+			fromData:      ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
+			paused:        true,
+			onPause:       ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
+			goldenURI:     goldenSnapshotURI,
+			goldenScope:   ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
+			wantCode:      codes.OK,
+			wantGoldenURI: "",
 		},
 		{
-			name:           "fails when golden snapshot is not Full",
-			fromData:       ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
-			contentScope:   ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
-			goldenSnapshot: "golden-1",
-			seedGolden:     true,
-			goldenScope:    ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
-			wantCode:       codes.FailedPrecondition,
+			name:         "fails when golden snapshot is not Full",
+			fromData:     ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
+			contentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+			goldenURI:    goldenSnapshotURI,
+			goldenScope:  ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+			wantCode:     codes.FailedPrecondition,
 		},
 		{
 			name:         "fails when template has no golden snapshot",
@@ -977,33 +971,32 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 			wantCode:     codes.FailedPrecondition,
 		},
 		{
-			name:           "fails when golden snapshot data is missing",
-			fromData:       ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
-			contentScope:   ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
-			goldenSnapshot: "golden-1",
-			wantCode:       codes.DataLoss,
+			name:         "fails when the golden snapshot uri is malformed",
+			fromData:     ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
+			contentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+			goldenURI:    "golden-1",
+			goldenScope:  ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
+			wantCode:     codes.DataLoss,
 		},
 		{
 			// A Full snapshot restores from its own content even under
 			// Golden fromData (e.g. taken before the template switched).
-			name:           "leaves golden location empty for Full snapshot",
-			fromData:       ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
-			contentScope:   ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
-			goldenSnapshot: "golden-1",
-			seedGolden:     true,
-			goldenScope:    ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
-			wantCode:       codes.OK,
-			wantGoldenURI:  "",
+			name:          "leaves golden location empty for Full snapshot",
+			fromData:      ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
+			contentScope:  ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
+			goldenURI:     goldenSnapshotURI,
+			goldenScope:   ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
+			wantCode:      codes.OK,
+			wantGoldenURI: "",
 		},
 		{
-			name:           "leaves golden location empty under ColdBoot fromData",
-			fromData:       ateapipb.ResumeSource_RESUME_SOURCE_COLD_BOOT,
-			contentScope:   ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
-			goldenSnapshot: "golden-1",
-			seedGolden:     true,
-			goldenScope:    ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
-			wantCode:       codes.OK,
-			wantGoldenURI:  "",
+			name:          "leaves golden location empty under ColdBoot fromData",
+			fromData:      ateapipb.ResumeSource_RESUME_SOURCE_COLD_BOOT,
+			contentScope:  ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+			goldenURI:     goldenSnapshotURI,
+			goldenScope:   ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
+			wantCode:      codes.OK,
+			wantGoldenURI: "",
 		},
 	}
 
@@ -1012,32 +1005,17 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 			ctx := context.Background()
 			persistence := newTestPersistence(t)
 
-			if tt.seedGolden {
-				storetest.MustCreateActorSnapshot(t, ctx, persistence, &ateapipb.ActorSnapshot{
-					Metadata: &ateapipb.ResourceMetadata{Atespace: resources.GoldenActorAtespace, Name: tt.goldenSnapshot},
-					Status: &ateapipb.ActorSnapshotStatus{
-						ContentScope: tt.goldenScope,
-						SnapshotUri:  goldenSnapshotURI,
-					},
-				})
-			}
-
 			var seedOpts []func(*ateapipb.Actor)
 			if tt.paused {
 				seedOpts = append(seedOpts, func(a *ateapipb.Actor) {
 					a.Status.LocalSnapshotInfo = &ateapipb.LocalSnapshotInfo{SnapshotName: "pause-1"}
 				})
 			} else {
-				snap := storetest.MustCreateActorSnapshot(t, ctx, persistence, &ateapipb.ActorSnapshot{
-					Metadata: &ateapipb.ResourceMetadata{Atespace: actorRef.Atespace, Name: "snap-1"},
-					Status: &ateapipb.ActorSnapshotStatus{
-						SourceActor:  &ateapipb.ObjectRef{Atespace: actorRef.Atespace, Name: actorRef.Name},
-						ContentScope: tt.contentScope,
-						SnapshotUri:  "gs://bucket/root/snapshots/" + actorRef.Atespace + "/snap-1",
-					},
-				})
 				seedOpts = append(seedOpts, func(a *ateapipb.Actor) {
-					a.Status.LatestSnapshot = &ateapipb.ObjectRef{Atespace: actorRef.Atespace, Name: snap.GetMetadata().GetName()}
+					a.Status.ExternalSnapshot = &ateapipb.ExternalSnapshot{
+						SnapshotUri:  "gs://bucket/root/snapshots/" + actorRef.Atespace + "/snap-1",
+						ContentScope: tt.contentScope,
+					}
 				})
 			}
 			actorState := ateapipb.ActorState_ACTOR_STATE_SUSPENDED
@@ -1054,12 +1032,10 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 					OnResume: &ateapipb.OnResumeConfig{FromData: tt.fromData},
 				},
 			}
-			if tt.goldenSnapshot != "" {
-				tmpl.Status = &ateapipb.ActorTemplateStatus{
-					GoldenSnapshotStatus: &ateapipb.GoldenSnapshotStatus{
-						GoldenSnapshot: &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: tt.goldenSnapshot},
-					},
-				}
+			if tt.goldenURI != "" {
+				tmpl.Status = &ateapipb.ActorTemplateStatus{GoldenSnapshotStatus: &ateapipb.GoldenSnapshotStatus{
+					GoldenSnapshot: &ateapipb.ExternalSnapshot{SnapshotUri: tt.goldenURI, ContentScope: tt.goldenScope},
+				}}
 			}
 			if _, err := persistence.CreateActorTemplate(ctx, tmpl); err != nil {
 				t.Fatalf("create template: %v", err)
@@ -1094,13 +1070,6 @@ func TestLoadActorForResume_GoldenFallbackRejectsNonFullGolden(t *testing.T) {
 	persistence := newTestPersistence(t)
 	actorRef := resources.ActorRef{Atespace: "team-a", Name: "id1"}
 
-	storetest.MustCreateActorSnapshot(t, ctx, persistence, &ateapipb.ActorSnapshot{
-		Metadata: &ateapipb.ResourceMetadata{Atespace: resources.GoldenActorAtespace, Name: "golden-1"},
-		Status: &ateapipb.ActorSnapshotStatus{
-			ContentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
-			SnapshotUri:  "gs://bucket/golden-root/snapshots/ate-golden/golden-1",
-		},
-	})
 	seedWorkflowActor(t, ctx, persistence, actorRef, "ns", "tmpl1", ateapipb.ActorState_ACTOR_STATE_SUSPENDED)
 
 	storetest.MustCreateAtespace(t, ctx, persistence, "ns")
@@ -1108,7 +1077,10 @@ func TestLoadActorForResume_GoldenFallbackRejectsNonFullGolden(t *testing.T) {
 		Metadata: &ateapipb.ResourceMetadata{Atespace: "ns", Name: "tmpl1"},
 		Status: &ateapipb.ActorTemplateStatus{
 			GoldenSnapshotStatus: &ateapipb.GoldenSnapshotStatus{
-				GoldenSnapshot: &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: "golden-1"},
+				GoldenSnapshot: &ateapipb.ExternalSnapshot{
+					SnapshotUri:  "gs://bucket/golden-root/snapshots/ate-golden/golden-1",
+					ContentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+				},
 			},
 		},
 	}); err != nil {

@@ -434,7 +434,7 @@ Triggered by an inbound request at the Gateway or an explicit API call.
   2. **Assignment**: The Control Plane claims a warm worker from the
      `WorkerPool`.
 
-  3. **Hydration**: The `atelet` supervisor coordinates with the `ateom` process inside the worker pod to restore the ActorTemplate's golden `ActorSnapshot` (for first-run) or the Actor's latest `ActorSnapshot` (for recurring runs) into the sandbox.
+  3. **Hydration**: The `atelet` supervisor coordinates with the `ateom` process inside the worker pod to restore the ActorTemplate's golden external snapshot (for first-run) or the Actor's own external snapshot (for recurring runs) into the sandbox.
 
   4. **State**: State transitions to `ACTOR_STATE_RUNNING`. The actor now has an
      active Worker IP.
@@ -453,20 +453,25 @@ Triggered by an explicit `SuspendActor` call.
 
   3. **Reclaim**: The physical worker is wiped and returned to the `WorkerPool`.
 
-  4. **State**: State transitions back to `ACTOR_STATE_SUSPENDED`, now pointing to
-     an immutable `ActorSnapshot` resource and references it for future resumptions.
+  4. **Release**: The external snapshot the Actor held before this suspend is
+     deleted from object storage. An Actor owns one snapshot at a time; one it
+     borrowed from a tag is left alone, since the tag owns it.
 
-Snapshots may be given tags owned and addressed by an Atespace. The same tag
-name may exist in different Atespaces. A tag is an immutable alias and retention
-pin: publishing it permits reuse from other Atespaces without changing its
-`atespace/name` address. Deleting the owning Atespace deletes all of its tags,
-including published tags, but leaves snapshot cleanup to garbage collection.
+  5. **State**: State transitions back to `ACTOR_STATE_SUSPENDED`, and the Actor's
+     `status.externalSnapshot` names the external snapshot it resumes from.
+
+Snapshots may be given tags owned and addressed by an Atespace. The same tag 
+name may exist in different Atespaces. A tag is an immutable alias and retention pin:
+it holds its own copy of the external snapshot, made at creation, so it outlives the 
+Actor that took it, and publishing it permits reuse from other Atespaces without changing its
+`atespace/name` address. Deleting a tag deletes that copy; an Atespace with
+tags cannot be deleted until they are.
 
 ### Phase 4: Deletion
 
 By default, only actors in `ACTOR_STATE_SUSPENDED` or `ACTOR_STATE_CRASHED` state can be deleted from the Control Plane. With the `any_state` flag enabled, an actor in any state (such as `ACTOR_STATE_RUNNING` or `ACTOR_STATE_PAUSED`) can be deleted directly; the workflow terminates the running containers on the worker, detaches mounted volumes, and frees the worker assignment before deleting the record.
 
-After deletion, the state of the actor (i.e., memory+disk snapshots) is garbage collected. The garbage collection process is not implemented yet.
+After deletion, the state of the actor (i.e., memory+disk snapshots) is garbage collected.
 
 ## State Management & Persistence
 

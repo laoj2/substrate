@@ -27,6 +27,7 @@ import (
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store/storetest"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/workercache"
 	"github.com/agent-substrate/substrate/internal/ateinterceptors"
+	"github.com/agent-substrate/substrate/internal/objectstore/objectstoretest"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/internal/volume"
 	atev1alpha1 "github.com/agent-substrate/substrate/pkg/api/v1alpha1"
@@ -90,6 +91,9 @@ type testContext struct {
 	ateletIndexer cache.Indexer
 	// metricReader collects what the service's instruments recorded.
 	metricReader *sdkmetric.ManualReader
+	// objectStore holds the external snapshots the service wrote, so a test can
+	// see which ones a flow created and released.
+	objectStore *objectstoretest.Fake
 }
 
 // setupTest sets up a fully isolated test environment.
@@ -176,7 +180,8 @@ func setupTestWithVolumePlugins(t *testing.T, ns string, plugins map[string]volu
 			mockDriverName: mockPlugin,
 		}
 	}
-	service := controlapi.NewRPCService(persistence, wc, workerPoolLister, sandboxConfigLister, csiDriverConfigLister, scLister, dialer, instruments, "", volPlugins)
+	objectStore := objectstoretest.New()
+	service := controlapi.NewRPCService(persistence, wc, workerPoolLister, sandboxConfigLister, csiDriverConfigLister, scLister, dialer, instruments, "", volPlugins, objectStore)
 
 	// 5. Start REAL gRPC Server for ATE API
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(
@@ -210,6 +215,9 @@ func setupTestWithVolumePlugins(t *testing.T, ns string, plugins map[string]volu
 
 	// Call Reset on global mock
 	fakeAtelet.Reset()
+	// A checkpoint writes its external snapshot into this test's own store, so
+	// the copy and release steps have something to act on.
+	fakeAtelet.SetObjectStore(objectStore)
 
 	// Create namespace
 	_, err = k8sClient.CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{
@@ -252,6 +260,37 @@ func setupTestWithVolumePlugins(t *testing.T, ns string, plugins map[string]volu
 		sandboxConfigLister: sandboxConfigLister,
 		ateletIndexer:       ateletInformer.GetIndexer(),
 		metricReader:        metricReader,
+		objectStore:         objectStore,
+	}
+}
+
+// snapshotObjectNames returns the names, relative to snapshotURI, of the
+// objects the external snapshot there is made of. Empty means the snapshot is
+// not in object storage — either never written, or collected.
+func snapshotObjectNames(t *testing.T, tc *testContext, snapshotURI string) []string {
+	t.Helper()
+	uri, err := resources.ParseSnapshotURI(snapshotURI)
+	if err != nil {
+		t.Fatalf("ParseSnapshotURI(%q) = %v", snapshotURI, err)
+	}
+	return tc.objectStore.Snapshot(t, uri)
+}
+
+// assertSnapshotPresent fails when the external snapshot at snapshotURI is not
+// in object storage.
+func assertSnapshotPresent(t *testing.T, tc *testContext, snapshotURI string) {
+	t.Helper()
+	if names := snapshotObjectNames(t, tc, snapshotURI); len(names) == 0 {
+		t.Errorf("external snapshot %s is not in object storage, want it present", snapshotURI)
+	}
+}
+
+// assertSnapshotCollected fails when anything is left of the external snapshot
+// at snapshotURI.
+func assertSnapshotCollected(t *testing.T, tc *testContext, snapshotURI string) {
+	t.Helper()
+	if names := snapshotObjectNames(t, tc, snapshotURI); len(names) != 0 {
+		t.Errorf("external snapshot %s still holds %v, want it collected", snapshotURI, names)
 	}
 }
 
@@ -334,16 +373,6 @@ func createTemplateWithContainersAndVolumes(t *testing.T, tc *testContext, ns st
 		t.Fatalf("failed to create actor template: %v", err)
 	}
 
-	const goldenSnapshot = "golden"
-	storetest.MustCreateActorSnapshot(t, context.Background(), tc.persistence, &ateapipb.ActorSnapshot{
-		Metadata: &ateapipb.ResourceMetadata{Atespace: resources.GoldenActorAtespace, Name: goldenSnapshot},
-		Status: &ateapipb.ActorSnapshotStatus{
-			ActorTemplateUid: created.GetMetadata().GetUid(),
-			ContentScope:     ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
-			SnapshotUri:      "gs://fake-fake-fake/snapshots/" + resources.GoldenActorAtespace + "/" + goldenSnapshot,
-		},
-	})
-
 	// Record the golden snapshot on the template's status directly in the
 	// store, as the ActorTemplateReconciler's checkpoint would: there is no
 	// status RPC, and the reconciler does not run in this test environment.
@@ -352,7 +381,7 @@ func createTemplateWithContainersAndVolumes(t *testing.T, tc *testContext, ns st
 		func(dbTemplate *ateapipb.ActorTemplate) error {
 			dbTemplate.Status = &ateapipb.ActorTemplateStatus{
 				GoldenSnapshotStatus: &ateapipb.GoldenSnapshotStatus{
-					GoldenSnapshot: &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: goldenSnapshot},
+					GoldenSnapshot: &ateapipb.ExternalSnapshot{SnapshotUri: "gs://fake-fake-fake/snapshots/" + resources.GoldenActorAtespace + "/golden", ContentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL},
 				},
 			}
 			return nil
