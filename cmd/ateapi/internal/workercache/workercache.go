@@ -148,6 +148,13 @@ func (c *Cache) Forget(name string) {
 	delete(c.workers, name)
 }
 
+// Observe stores a Worker row read from the store outside the watch, such as
+// the row a failed bind read under its lock. A row older than the cached one
+// is ignored, as for a watch event.
+func (c *Cache) Observe(worker *ateapi.Worker) {
+	c.applyEvent(store.WorkerEvent{Type: store.WorkerEventUpdated, Worker: worker})
+}
+
 func (c *Cache) sync(ctx context.Context) (*store.WorkerWatch, error) {
 	watch, err := c.store.WatchWorkers(ctx)
 	if err != nil {

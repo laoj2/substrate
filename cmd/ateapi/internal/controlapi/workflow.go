@@ -136,7 +136,7 @@ func NewActorWorkflow(
 	return &ActorWorkflow{
 		store:                store,
 		workerCache:          workerCache,
-		scheduler:            scheduling.New(workerCache),
+		scheduler:            scheduling.New(workerCache, scheduling.WithPolicy(scheduling.PolicyFromEnv())),
 		dialer:               dialer,
 		storageClassLister:   storageClassLister,
 		instruments:          instruments,

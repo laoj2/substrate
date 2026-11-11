@@ -433,6 +433,74 @@ func TestAssignWorkerAttempt_SkipsWorkerAssignedInOtherAtespace(t *testing.T) {
 	}
 }
 
+// silentWatchStore delivers no watch events, so a cache built on it keeps
+// what it listed until something else updates it.
+type silentWatchStore struct {
+	store.Interface
+}
+
+func (silentWatchStore) WatchWorkers(context.Context) (*store.WorkerWatch, error) {
+	return store.NewWorkerWatch(make(chan store.WorkerEvent), func() {}), nil
+}
+
+// TestAssignWorkerAttempt_FilledUpUpdatesCache covers a bind that finds the
+// picked Worker full. The cache takes the row the bind read, so the next pick
+// on this replica sees the Worker full.
+func TestAssignWorkerAttempt_FilledUpUpdatesCache(t *testing.T) {
+	ctx := context.Background()
+	persistence := newTestPersistence(t)
+	name := testWorkerUID("pod-1")
+	worker := &ateapi.Worker{
+		Metadata:        &ateapi.ResourceMetadata{Name: name},
+		WorkerNamespace: "worker-ns",
+		WorkerPool:      "pool",
+		WorkerPod:       "pod-1",
+		WorkerPodUid:    name,
+		NodeName:        "node1",
+		Status: registered(&ateapi.WorkerStatus{
+			State:          ateapi.WorkerState_WORKER_STATE_ACTIVE,
+			Capacity:       &ateapi.WorkerResources{Actors: 1},
+			SandboxClasses: workerSandboxClasses(testSandboxRuntime()),
+		}),
+	}
+	if _, err := persistence.CreateWorker(ctx, worker); err != nil {
+		t.Fatalf("CreateWorker: %v", err)
+	}
+	cacheCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	wc := workercache.New(silentWatchStore{persistence}, time.Hour)
+	if err := wc.Start(cacheCtx); err != nil {
+		t.Fatalf("workercache.Start: %v", err)
+	}
+	// Another replica fills the Worker. This cache does not hear of it.
+	seedAssignment(t, persistence, name, &ateapi.ActorAssignment{
+		Actor:    &ateapi.ObjectRef{Atespace: "team-a", Name: "other"},
+		ActorUid: "other-uid",
+	})
+
+	actor := storetest.MustCreateActor(t, ctx, persistence, &ateapi.Actor{
+		Metadata: &ateapi.ResourceMetadata{Atespace: "team-a", Name: "id1"},
+		Status:   &ateapi.ActorStatus{State: ateapi.ActorState_ACTOR_STATE_SUSPENDED},
+	})
+	w := &ActorWorkflow{store: persistence, workerCache: wc, scheduler: scheduling.New(wc)}
+	_, _, err := w.assignWorkerAttempt(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, actor, &ateapi.ActorTemplate{})
+	if !errors.Is(err, errWorkerFilledUp) {
+		t.Fatalf("assignWorkerAttempt error = %v, want errWorkerFilledUp", err)
+	}
+
+	cached, err := wc.Worker(name)
+	if err != nil {
+		t.Fatalf("Worker(%s): %v", name, err)
+	}
+	if got := cached.GetStatus().GetAllocated().GetActors(); got != 1 {
+		t.Errorf("cached allocated actors after the failed bind = %d, want 1", got)
+	}
+	_, _, err = w.assignWorkerAttempt(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, actor, &ateapi.ActorTemplate{})
+	if apierror.Code(err) != codes.ResourceExhausted {
+		t.Errorf("second assignWorkerAttempt error = %v, want ResourceExhausted", err)
+	}
+}
+
 // TestEnsureWorkerAssigned_MissingUploadClaimsNoWorker verifies that a local
 // snapshot that records no upload fails the resume before a worker is claimed,
 // so the actor stays SUSPENDED and the worker stays free.

@@ -276,6 +276,12 @@ func (w *ActorWorkflow) ensureWorkerAssigned(ctx context.Context, actorRef resou
 			return true, nil
 		}
 		if errors.Is(attemptErr, store.ErrVersionConflict) || errors.Is(attemptErr, errWorkerFilledUp) {
+			// EXPERIMENT ONLY: counted from logs to compare scheduling policies.
+			reason := "version_conflict"
+			if errors.Is(attemptErr, errWorkerFilledUp) {
+				reason = "filled_up"
+			}
+			slog.InfoContext(ctx, "schedexp assignment retry", slog.String("reason", reason), slog.String("actor", actorRef.String()))
 			if attemptActor != nil {
 				actor = attemptActor // retry with the refreshed actor
 			}
@@ -463,13 +469,17 @@ func (w *ActorWorkflow) assignWorkerAttempt(ctx context.Context, actorRef resour
 	// and two claims for the last place cannot both be admitted.
 	// The bind evaluates the fresh row; record the assignment from the same view.
 	bound := assignedWorker
+	// rejected is the row admit turned away, newer than the cached one.
+	var rejected *ateapi.Worker
 	admit := func(fresh *ateapi.Worker) error {
 		if !w.scheduler.Applies(fresh, constraints) || !w.scheduler.HasRoom(fresh, constraints) {
+			rejected = fresh
 			return errWorkerFilledUp
 		}
 		// The Worker re-registered with a different overhead since the cache
 		// saw it. Rare, and the retry reads the new one.
 		if got, _ := scheduling.Booking(fresh, constraints); !proto.Equal(got, booking) {
+			rejected = fresh
 			return errWorkerFilledUp
 		}
 		bound = fresh
@@ -493,10 +503,13 @@ func (w *ActorWorkflow) assignWorkerAttempt(ctx context.Context, actorRef resour
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, nil, apierror.NotFound("Actor %s not found", actorRef)
 		}
-		// errWorkerFilledUp leaves the cache alone: it reports no room for
-		// this actor's size, or an overhead the cache hasn't seen yet, so
-		// forgetting the worker would hide it from every smaller actor until
-		// the next watch event or relist.
+		// errWorkerFilledUp keeps the worker in the cache, since it may still
+		// fit a smaller actor. The cache takes the row admit read, so the
+		// retry and other resumes on this replica stop picking the worker
+		// before the watch event or outbox poll would tell them.
+		if errors.Is(err, errWorkerFilledUp) && rejected != nil {
+			w.workerCache.Observe(rejected)
+		}
 		if !errors.Is(err, store.ErrVersionConflict) {
 			return nil, nil, actorWriteError(actorRef, err)
 		}

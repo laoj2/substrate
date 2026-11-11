@@ -16,13 +16,18 @@
 package scheduling
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"math"
 	"math/bits"
+	"log/slog"
 	"math/rand"
+	"os"
 	"slices"
+	"strconv"
+	"strings"
 
 	"go.ate.dev/substrate/api/ateapi/v1"
 	"go.ate.dev/substrate/internal/hardware"
@@ -64,6 +69,10 @@ type Constraints struct {
 	// Limits are the actor's declared resource limits, in the units a Worker
 	// reports its capacity in, so the two subtract.
 	Limits *ateapi.Resources
+
+	// LongLived is a hint that the actor is expected to run much longer than
+	// most. EXPERIMENT ONLY: only the prefix policy reads it.
+	LongLived bool
 }
 
 // ErrNoCapacity is returned by Schedule when no worker that meets the
@@ -95,11 +104,49 @@ type scheduler struct {
 	source WorkerSource
 	// intn returns a uniformly distributed random value in [0,n).
 	// Defaults to the global math/rand source
-	intn func(n int) int
+	intn   func(n int) int
+	policy Policy
 }
 
 // Option configures the Scheduler returned by New.
 type Option func(*scheduler)
+
+// Policy picks among the candidates with room. EXPERIMENT ONLY: it exists to
+// compare fragmentation against P2C and is not meant for upstream.
+type Policy struct {
+	// Name is one of p2c (the default), random, mostallocated, bestofd, topk,
+	// watermark, firstfit, oldestofd or prefix.
+	Name string
+	// K is the sample size for bestofd, and the pool to pick from at random
+	// for topk, watermark and firstfit. For prefix it is the least free
+	// capacity the window keeps, in workers: 1 is one empty worker's worth.
+	K int
+	// Watermark is the highest post-booking load watermark packs to. For
+	// prefix it is the free capacity the window keeps, as a fraction of what
+	// the window has allocated.
+	Watermark float64
+}
+
+// PolicyFromEnv parses ATE_API_SCHEDULING_POLICY as name[:K[:watermark]],
+// for example "topk:3". Unset means p2c. EXPERIMENT ONLY.
+func PolicyFromEnv() Policy {
+	v := os.Getenv("ATE_API_SCHEDULING_POLICY")
+	parts := strings.Split(v, ":")
+	p := Policy{Name: parts[0]}
+	if len(parts) > 1 {
+		p.K, _ = strconv.Atoi(parts[1])
+	}
+	if len(parts) > 2 {
+		p.Watermark, _ = strconv.ParseFloat(parts[2], 64)
+	}
+	slog.Info("scheduling policy", slog.String("name", p.Name), slog.Int("k", p.K), slog.Float64("watermark", p.Watermark))
+	return p
+}
+
+// WithPolicy sets the placement policy. EXPERIMENT ONLY.
+func WithPolicy(p Policy) Option {
+	return func(s *scheduler) { s.policy = p }
+}
 
 // WithIntn overrides the random source used to sample candidate pairs: when
 // n >= 2 candidates exist, Schedule calls intn(n) and then intn(n-1).
@@ -126,6 +173,10 @@ func (s *scheduler) Schedule(ctx context.Context, constraints Constraints) (*ate
 		return nil, fmt.Errorf("while listing workers: %w", err)
 	}
 
+	if strings.HasPrefix(s.policy.Name, "prefix") {
+		return s.schedulePrefix(workers, constraints)
+	}
+
 	var candidates []candidate
 	for _, worker := range workers {
 		if !s.Applies(worker, constraints) {
@@ -136,6 +187,7 @@ func (s *scheduler) Schedule(ctx context.Context, constraints Constraints) (*ate
 			continue
 		}
 		if cand, ok := checkRoom(worker, booking); ok {
+			cand.after = loadAfter(worker, booking)
 			candidates = append(candidates, cand)
 		}
 	}
@@ -145,6 +197,79 @@ func (s *scheduler) Schedule(ctx context.Context, constraints Constraints) (*ate
 	}
 	if len(candidates) == 1 {
 		return candidates[0].worker, nil
+	}
+
+	switch s.policy.Name {
+	case "", "p2c":
+	case "random":
+		return candidates[s.intn(len(candidates))].worker, nil
+	case "mostallocated":
+		best := 0
+		for i := range candidates {
+			if candidates[i].after > candidates[best].after {
+				best = i
+			}
+		}
+		return candidates[best].worker, nil
+	case "bestofd":
+		d := min(max(s.policy.K, 2), len(candidates))
+		// Partial Fisher-Yates: the first d entries become a uniform sample.
+		best := -1
+		for i := range d {
+			j := i + s.intn(len(candidates)-i)
+			candidates[i], candidates[j] = candidates[j], candidates[i]
+			if best < 0 || candidates[i].after > candidates[best].after {
+				best = i
+			}
+		}
+		return candidates[best].worker, nil
+	case "oldestofd":
+		// Sample d and take the oldest, so the newest workers, which a
+		// ReplicaSet scales down first, rarely get actors. With Watermark set,
+		// prefer the oldest sample that stays at or below it.
+		d := min(max(s.policy.K, 2), len(candidates))
+		best, bestUnder := -1, -1
+		for i := range d {
+			j := i + s.intn(len(candidates)-i)
+			candidates[i], candidates[j] = candidates[j], candidates[i]
+			if best < 0 || olderThan(&candidates[i], &candidates[best]) {
+				best = i
+			}
+			if s.policy.Watermark > 0 && candidates[i].after <= s.policy.Watermark &&
+				(bestUnder < 0 || olderThan(&candidates[i], &candidates[bestUnder])) {
+				bestUnder = i
+			}
+		}
+		if bestUnder >= 0 {
+			return candidates[bestUnder].worker, nil
+		}
+		return candidates[best].worker, nil
+	case "topk":
+		slices.SortStableFunc(candidates, func(a, b candidate) int { return cmpDesc(a.after, b.after) })
+		return candidates[s.intn(min(max(s.policy.K, 1), len(candidates)))].worker, nil
+	case "watermark":
+		var under []candidate
+		for _, c := range candidates {
+			if c.after <= s.policy.Watermark {
+				under = append(under, c)
+			}
+		}
+		if len(under) > 0 {
+			slices.SortStableFunc(under, func(a, b candidate) int { return cmpDesc(a.after, b.after) })
+			return under[s.intn(min(max(s.policy.K, 1), len(under)))].worker, nil
+		}
+	case "firstfit":
+		slices.SortStableFunc(candidates, func(a, b candidate) int {
+			at := a.worker.GetMetadata().GetCreateTime().AsTime()
+			bt := b.worker.GetMetadata().GetCreateTime().AsTime()
+			if c := at.Compare(bt); c != 0 {
+				return c
+			}
+			return cmp.Compare(a.worker.GetWorkerPod(), b.worker.GetWorkerPod())
+		})
+		return candidates[s.intn(min(max(s.policy.K, 1), len(candidates)))].worker, nil
+	default:
+		return nil, fmt.Errorf("unknown scheduling policy %q", s.policy.Name)
 	}
 
 	i := s.intn(len(candidates))
@@ -158,12 +283,135 @@ func (s *scheduler) Schedule(ctx context.Context, constraints Constraints) (*ate
 	return candidates[i].worker, nil
 }
 
+// schedulePrefix orders the eligible workers oldest first and takes the
+// shortest prefix whose free capacity is at least max(K, Watermark*allocated).
+// Both are sums of each worker's load, so they count in workers and do not
+// depend on --max-actors. It returns the less loaded of two random workers
+// with room in that prefix. Workers past the prefix get no new actors, so they
+// empty as their actors suspend. A LongLived actor goes to one of the two
+// oldest workers with room instead. EXPERIMENT ONLY.
+func (s *scheduler) schedulePrefix(workers []*ateapi.Worker, constraints Constraints) (*ateapi.Worker, error) {
+	type entry struct {
+		cand    candidate
+		hasRoom bool
+	}
+	var eligible []entry
+	for _, worker := range workers {
+		if !s.Applies(worker, constraints) {
+			continue
+		}
+		e := entry{cand: candidate{worker: worker}}
+		if booking, ok := Booking(worker, constraints); ok {
+			if cand, ok := checkRoom(worker, booking); ok {
+				cand.after = loadAfter(worker, booking)
+				e.cand, e.hasRoom = cand, true
+			}
+		}
+		eligible = append(eligible, e)
+	}
+	slices.SortFunc(eligible, func(a, b entry) int {
+		if olderThan(&a.cand, &b.cand) {
+			return -1
+		}
+		return 1
+	})
+
+	var window []candidate
+	var used, free float64
+	// saturated is set when no prefix has the free capacity asked for.
+	saturated := !constraints.LongLived
+	for _, e := range eligible {
+		load := loadNow(e.cand.worker)
+		used += load
+		free += 1 - load
+		if e.hasRoom {
+			window = append(window, e.cand)
+		}
+		if constraints.LongLived && len(window) == 2 {
+			break
+		}
+		if !constraints.LongLived && len(window) >= 2 && free >= max(float64(s.policy.K), s.policy.Watermark*used) {
+			saturated = false
+			break
+		}
+	}
+	switch len(window) {
+	case 0:
+		return nil, ErrNoCapacity
+	case 1:
+		return window[0].worker, nil
+	}
+	i := s.intn(len(window))
+	if constraints.LongLived {
+		return window[i].worker, nil
+	}
+	j := s.intn(len(window) - 1)
+	if j >= i {
+		j++
+	}
+	a, b := &window[i], &window[j]
+	if lessLoaded(b, a) {
+		a, b = b, a
+	}
+	// a is the less loaded. prefixbest always takes the fuller one. prefixsat
+	// takes it only when saturated, where spreading would leave no worker
+	// with room for a large actor.
+	if s.policy.Name == "prefixbest" || (s.policy.Name == "prefixsat" && saturated) {
+		return b.worker, nil
+	}
+	return a.worker, nil
+}
+
+// loadNow returns the highest of slot, CPU and memory utilization.
+// Dimensions the worker does not report are skipped.
+func loadNow(w *ateapi.Worker) float64 {
+	capacity := w.GetStatus().GetCapacity()
+	used := w.GetStatus().GetAllocated()
+	load := float64(used.GetActors()) / float64(capacity.GetActors())
+	if c := capacity.GetCpuMillicores(); c > 0 {
+		load = max(load, float64(used.GetCpuMillicores())/float64(c))
+	}
+	if c := capacity.GetMemoryBytes(); c > 0 {
+		load = max(load, float64(used.GetMemoryBytes())/float64(c))
+	}
+	return min(load, 1)
+}
+
 // candidate pairs an eligible worker with its cached compute utilization.
 type candidate struct {
 	worker *ateapi.Worker
 	// resUtil is the worker's dominant compute-resource utilization in [0,1],
 	// or -1 if not yet computed.
 	resUtil float64
+	// after is the worker's dominant utilization once this actor is booked.
+	after float64
+}
+
+func cmpDesc(a, b float64) int { return cmp.Compare(b, a) }
+
+// olderThan orders workers by create_time, then by pod name.
+func olderThan(a, b *candidate) bool {
+	at := a.worker.GetMetadata().GetCreateTime().AsTime()
+	bt := b.worker.GetMetadata().GetCreateTime().AsTime()
+	if c := at.Compare(bt); c != 0 {
+		return c < 0
+	}
+	return a.worker.GetWorkerPod() < b.worker.GetWorkerPod()
+}
+
+// loadAfter returns the highest of slot, CPU and memory utilization once
+// booking is added. Dimensions the worker does not report are skipped.
+func loadAfter(w *ateapi.Worker, booking *ateapi.Resources) float64 {
+	capacity := w.GetStatus().GetCapacity()
+	used := w.GetStatus().GetAllocated()
+	load := float64(used.GetActors()+1) / float64(capacity.GetActors())
+	if c := capacity.GetCpuMillicores(); c > 0 {
+		load = max(load, float64(used.GetCpuMillicores()+booking.GetCpuMillicores())/float64(c))
+	}
+	if c := capacity.GetMemoryBytes(); c > 0 {
+		load = max(load, float64(used.GetMemoryBytes()+booking.GetMemoryBytes())/float64(c))
+	}
+	return load
 }
 
 func (c *candidate) resourceUtilization() float64 {
