@@ -1,0 +1,490 @@
+configuration: 14 set, 44 default
+  actorJWT.algorithm                          ES256                                                    (from default)
+  actorJWT.issuer                             ""                                                       (from default)
+  ateapi.authz.bootstrapOwners                ""                                                       (from default)
+  ateapi.authz.egressGatewayExtraSPIFFEIDs    ""                                                       (from default)
+  ateapi.expectedJWTIssuer                    ""                                                       (from default)
+  ateapi.logLevel                             ""                                                       (from default)
+  ateapi.postgres.cloudsql.gsa                ""                                                       (from default)
+  ateapi.postgres.cloudsql.iamAuth            ""                                                       (from default)
+  ateapi.postgres.cloudsql.instance           ""                                                       (from default)
+  ateapi.postgres.cloudsql.ipType             ""                                                       (from default)
+  ateapi.postgres.owner.connectionString      ""                                                       (from default)
+  ateapi.postgres.owner.role                  substrate_owner                                          (from default)
+  ateapi.postgres.poolMaxConns                20                                                       (from --ateapi-postgres-pool-max-conns)
+  ateapi.postgres.readWrite.connectionString  ""                                                       (from default)
+  ateapi.postgres.readWrite.role              substrate_readwrite                                      (from default)
+  ateapi.postgres.schema                      ""                                                       (from default)
+  ateapi.postgres.serverCAFile                ""                                                       (from default)
+  ateapi.postgres.storageClass                ""                                                       (from default)
+  atenet.dataplane                            envoy                                                    (from default)
+  atenet.egress.additionalExtprocService      ""                                                       (from default)
+  atenet.egress.credentialProvider            {"enabled":false}                                        (from --credential-provider)
+  benchmark.actorMemory                       ""                                                       (from default)
+  benchmark.sandboxClass                      gvisor                                                   (from default)
+  benchmark.workerCount                       1                                                        (from default)
+  clusterSize                                 size0                                                    (from default)
+  context                                     gke_gke-luizaoj-test-dev_us-west1-c_sched-exp            (from --context)
+  cordonSystemInfraComponents                 true                                                     (from --cordon-system-infra-components)
+  csi.setup                                   none                                                     (from default)
+  demo.anthropicAPIKey                        ""                                                       (from default)
+  demo.counter.storageClass                   standard                                                 (from default)
+  demo.counter.withExternalVolume             false                                                    (from default)
+  docker.buildFlags                           ""                                                       (from default)
+  e2e.envoyConcurrency                        0                                                        (from default)
+  e2e.tuning                                  false                                                    (from default)
+  fakeDataPlane.enabled                       false                                                    (from default)
+  gcp.clusterLocation                         us-west1-c                                               (from CLUSTER_LOCATION)
+  gcp.clusterName                             sched-exp                                                (from CLUSTER_NAME)
+  gcp.projectID                               gke-luizaoj-test-dev                                     (from PROJECT_ID)
+  images.repo                                 ""                                                       (from default)
+  images.tag                                  ""                                                       (from default)
+  ingressAllowedSPIFFEIDs                     spiffe://cluster.local/ns/benchmarking/sa/default        (from --ingress-allowed-spiffe-ids)
+  kindCluster.enabled                         false                                                    (from default)
+  kindCluster.name                            kind                                                     (from default)
+  ko.defaultPlatforms                         linux/amd64                                              (from KO_DEFAULTPLATFORMS)
+  ko.dockerRepo                               us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images  (from KO_DOCKER_REPO)
+  kubeconfig                                  ""                                                       (from default)
+  namespace                                   ate-system                                               (from default)
+  otlpEndpoint                                ""                                                       (from default)
+  podcert.workersPerSigner                    0                                                        (from default)
+  preview                                     ""                                                       (from default)
+  publish.binariesDir                         bin/release                                              (from default)
+  publish.overwrite                           false                                                    (from default)
+  record.dir                                  ""                                                       (from default)
+  rolloutTimeout                              1m0s                                                     (from default)
+  sandboxClasses                              gvisor                                                   (from --sandbox-classes)
+  storage.bucketName                          sched-exp-gke-luizaoj-test-dev                           (from BUCKET_NAME)
+  storage.snapshotLocation                    gs://sched-exp-gke-luizaoj-test-dev/                     (from SNAPSHOT_LOCATION)
+  storage.transferGSAName                     ate-snapshot-transfer                                    (from SNAPSHOT_TRANSFER_GSA_NAME)
+[1;36m[step]: deploy_ate_system[0m
+  (apply of 1 objects took 0.535s)
+[1;36m[step]: deploy_crds[0m
+[1;36m[step]: images: built from source with ko[0m
+  (ko resolve -f - took 0.295s)
+  (apply of 5 objects took 1.323s)
+  (apply of 2 objects took 0.650s)
+  (apply of 1 objects took 0.211s)
+[1;36m[step]: ensure_apiserver_prerequisites[0m
+[1;36m[step]: create_jwt_authority_pool_secret[0m
+  created pool secret ate-system/actor-id-jwt-pool
+[1;36m[step]: create_actor_id_ca_pool_secret[0m
+  created pool secret ate-system/actor-id-ca-pool
+[1;36m[step]: create_actor_id_ca_certs_secret[0m
+[1;36m[step]: create_api_server_env_vars[0m
+[1;36m[step]: create_api_config[0m
+ate-api-config apiconfig.textproto:
+  | logging: {
+  |   level: "info"
+  | }
+[1;36m[step]: create_api_authentication_config[0m
+ate-api-authentication authentication.yaml:
+  | jwtProviders:
+  | - audiences:
+  |   - api.ate-system.svc
+  |   issuer: https://container.googleapis.com/v1/projects/gke-luizaoj-test-dev/locations/us-west1-c/clusters/sched-exp
+  |   name: kubernetes
+[1;36m[step]: create_podcertificate_controller_cas[0m
+  created pool secret podcertificate-controller-system/service-dns-ca-pool
+  created pool secret podcertificate-controller-system/pod-identity-ca-pool
+  created pool secret podcertificate-controller-system/postgres-ca-pool
+2026/11/11 16:56:18 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/podcertcontroller
+2026/11/11 16:56:19 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 16:56:19 Building go.ate.dev/substrate/cmd/podcertcontroller for linux/amd64
+2026/11/11 16:56:30 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/podcertcontroller:latest
+2026/11/11 16:56:33 pushed blob: sha256:4a2796d8ea5ef7ae1a64ba20ba56759987f49f2ea2091ddce6bade81c0ad1fa6
+2026/11/11 16:56:33 pushed blob: sha256:78b2cdecf1ca2503dbacec48c388761c82109cf189a52c6ca763f796108963c9
+2026/11/11 16:56:33 pushed blob: sha256:64052f0e822ea8b891a19729f234b31b02e3bb718902baa40acc4ccbcdaa44c7
+2026/11/11 16:56:33 pushed blob: sha256:aade8758ad2286cafafa4c9847f0fc362e557f1742776d1c5d6a82e326ef5578
+2026/11/11 16:56:33 pushed blob: sha256:b839dfae01f66e15c6a8b63520557ed315bdfe036342fa7a0c537259f10d7a9a
+2026/11/11 16:56:33 pushed blob: sha256:c172f21841dff4c8cf45cde46589c1c2616cefe7e819965e92e6d3475c428aa0
+2026/11/11 16:56:33 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/podcertcontroller:sha256-5621879171e12b57bda00d5f385719a9c574349df5335aa3d0dbd54be03372c0.sbom: digest: sha256:5e7c175f2f3b96c9af266e9a73744beeeab0b42fc79d0df217e7e96a7c412c86 size: 374
+2026/11/11 16:56:33 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/podcertcontroller:sha256-5621879171e12b57bda00d5f385719a9c574349df5335aa3d0dbd54be03372c0.sbom
+2026/11/11 16:56:33 pushed blob: sha256:2cc7ee286bf3a9e6af5f71756d7fc8e22e23ce65fec9047d774511ffcef79fa8
+2026/11/11 16:56:34 pushed blob: sha256:a99dd1dd5eaf3e2099256f1a75c8e4c02a1d3a81b8e2bfd1735b1dd166b68a12
+2026/11/11 16:56:34 pushed blob: sha256:617b009a71d625ef77982b400cb9939dd5ed9809ebf50681a0520b7c08c0ca89
+2026/11/11 16:56:34 pushed blob: sha256:7c12895b777bcaa8ccae0605b4de635b68fc32d60fa08f421dc3818bf55ee212
+2026/11/11 16:56:34 pushed blob: sha256:3214acf345c0cc6bbdb56b698a41ccdefc624a09d6beb0d38b5de0b2303ecaf4
+2026/11/11 16:56:34 pushed blob: sha256:2780920e5dbfbe103d03a583ed75345306e572ec5a48cb10361f046767d9f29a
+2026/11/11 16:56:34 pushed blob: sha256:18a4bdf746437cee0c49dab42c9605a3b0c18aacee5478bf44c7f0d80d8af28c
+2026/11/11 16:56:34 pushed blob: sha256:52630fc75a18675c530ed9eba5f55eca09b03e91bd5bc15307918bbc1a7e7296
+2026/11/11 16:56:34 pushed blob: sha256:ebddc55facdc6b1f7e0f30816a5fc7cc62f38abdf76c0a8b0a0ce52085754795
+2026/11/11 16:56:34 pushed blob: sha256:d6b1b89eccacc15c2420b2776d72c1dae334a00805ed9af54bf2f71e4d536f28
+2026/11/11 16:56:35 pushed blob: sha256:dd64bf2dd177757451a98fcdc999a339c35dee5d9872d8f4dc69c8f3c4dd0112
+2026/11/11 16:56:35 pushed blob: sha256:ec1b04bf2eb2122e86781f791b03ea0cf6588694e0f4a88245250224c186cdf0
+2026/11/11 16:56:35 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/podcertcontroller:latest: digest: sha256:5621879171e12b57bda00d5f385719a9c574349df5335aa3d0dbd54be03372c0 size: 2938
+2026/11/11 16:56:35 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/podcertcontroller@sha256:5621879171e12b57bda00d5f385719a9c574349df5335aa3d0dbd54be03372c0
+  (ko resolve -f - took 20.746s)
+  (apply of 7 objects took 1.576s)
+  (rollout status deployment/podcertificate-controller took 4.145s)
+Waiting for podcertificate ClusterTrustBundles to be ready...
+  (wait for clustertrustbundles took 8.738s)
+[1;36m[step]: setup_csi[0m
+Skipping CSI driver setup.
+  (apply of 1 objects took 0.155s)
+  (apply of 3 objects took 0.506s)
+  (rollout status statefulset/postgres took 22.132s)
+[1;36m[step]: setup_bundled_postgres[0m
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 3.10kB 0.0s done
+#1 DONE 0.1s
+
+#2 [internal] load metadata for docker.io/library/rust:bookworm@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288a37b5a285fc83971e
+#2 DONE 0.4s
+
+#3 [internal] load metadata for docker.io/envoyproxy/envoy:v1.39.5@sha256:8fc594a5d85eb76dca24155cfb9208882406873932b20cf33649a0a611194c43
+#3 DONE 0.4s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [builder 1/5] FROM docker.io/library/rust:bookworm@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288a37b5a285fc83971e
+#5 DONE 0.0s
+
+#6 [stage-1 1/2] FROM docker.io/envoyproxy/envoy:v1.39.5@sha256:8fc594a5d85eb76dca24155cfb9208882406873932b20cf33649a0a611194c43
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 61.81kB done
+#7 DONE 0.0s
+
+#8 [builder 2/5] WORKDIR /usr/src/dynamic-modules
+#8 CACHED
+
+#9 [builder 3/5] RUN case "amd64" in       amd64) echo x86_64 > /target-arch ;;       arm64) echo aarch64 > /target-arch ;;       *) echo "unsupported TARGETARCH: amd64" >&2; exit 1 ;;     esac     && arch="$(cat /target-arch)"     && if [ "amd64" != "amd64" ]; then cross="gcc-$(echo "$arch" | tr _ -)-linux-gnu libc6-dev-amd64-cross"; fi     && apt-get update && apt-get install -y --no-install-recommends     clang     libclang-dev     $cross     && rm -rf /var/lib/apt/lists/*     && rustup target add "${arch}-unknown-linux-gnu"
+#9 CACHED
+
+#10 [builder 4/5] COPY dynamic-modules/ .
+#10 CACHED
+
+#11 [builder 5/5] RUN arch="$(cat /target-arch)"     && if [ "amd64" != "amd64" ]; then       export "CARGO_TARGET_$(echo "$arch" | tr a-z A-Z)_UNKNOWN_LINUX_GNU_LINKER=${arch}-linux-gnu-gcc";     fi     && cargo build --release --locked --target "${arch}-unknown-linux-gnu"     && mkdir -p target/release     && cp "target/${arch}-unknown-linux-gnu/release/libenvoy_substrate_egress_policy.so" target/release/
+#11 CACHED
+
+#12 [stage-1 2/2] COPY --from=builder /usr/src/dynamic-modules/target/release/libenvoy_substrate_egress_policy.so /usr/local/lib/libenvoy_substrate_egress_policy.so
+#12 CACHED
+
+#13 exporting to image
+#13 exporting layers done
+#13 writing image sha256:516eee6d54e018aed390a522f652bba08546e1a361124aca458b7700c6d63ad9 0.0s done
+#13 naming to us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/envoy-dataplane:build-1794434233
+#13 naming to us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/envoy-dataplane:build-1794434233 0.0s done
+#13 DONE 0.0s
+
+#14 resolving provenance for metadata file
+#14 DONE 0.0s
+
+#15 pushing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/envoy-dataplane:build-1794434233 with docker
+#15 pushing layer f5eabdb221d7
+#15 pushing layer 5f70bf18a086
+#15 pushing layer 542314a962a1
+#15 pushing layer fb1759072c3e
+#15 pushing layer 533410a1d16a
+#15 pushing layer b9840e36aaec
+#15 pushing layer 44a1545c17f0
+#15 pushing layer ecc7068bf5ce
+#15 pushing layer e9d596290234
+#15 pushing layer cbaf391e6709
+#15 pushing layer fb1759072c3e 23.04kB / 19.48kB 0.9s
+#15 pushing layer 533410a1d16a 2.56kB / 750B 0.9s
+#15 pushing layer f5eabdb221d7 1.38MB / 1.38MB 1.2s
+#15 pushing layer b9840e36aaec 512B / 1.82kB 1.3s
+#15 pushing layer 542314a962a1 6.65MB / 105.11MB 1.4s
+#15 pushing layer b9840e36aaec 4.61kB / 1.82kB 1.3s
+#15 pushing layer 542314a962a1 12.78MB / 105.11MB 1.8s
+#15 pushing layer fb1759072c3e 1.7s done
+#15 pushing layer 533410a1d16a 1.7s done
+#15 pushing layer f5eabdb221d7 2.0s done
+#15 pushing layer 542314a962a1 18.35MB / 105.11MB 2.0s
+#15 pushing layer b9840e36aaec 2.1s done
+#15 pushing layer ecc7068bf5ce 3.07kB / 7B 2.0s
+#15 pushing layer 44a1545c17f0 1.43MB / 13.19MB 2.2s
+#15 pushing layer 542314a962a1 24.48MB / 105.11MB 2.4s
+#15 pushing layer 44a1545c17f0 2.72MB / 13.19MB 2.3s
+#15 pushing layer e9d596290234 49.15kB / 37.70kB 2.4s
+#15 pushing layer 44a1545c17f0 5.01MB / 13.19MB 2.5s
+#15 pushing layer 44a1545c17f0 6.46MB / 13.19MB 2.6s
+#15 pushing layer ecc7068bf5ce 2.6s done
+#15 pushing layer 44a1545c17f0 7.71MB / 13.19MB 2.7s
+#15 pushing layer 542314a962a1 30.61MB / 105.11MB 2.8s
+#15 pushing layer 44a1545c17f0 8.38MB / 13.19MB 3.0s
+#15 pushing layer e9d596290234 2.9s done
+#15 pushing layer cbaf391e6709 4.36MB / 78.09MB 3.0s
+#15 pushing layer 542314a962a1 37.29MB / 105.11MB 3.2s
+#15 pushing layer 44a1545c17f0 9.18MB / 13.19MB 3.3s
+#15 pushing layer cbaf391e6709 9.20MB / 78.09MB 3.4s
+#15 pushing layer 542314a962a1 45.65MB / 105.11MB 3.8s
+#15 pushing layer 44a1545c17f0 10.10MB / 13.19MB 3.7s
+#15 pushing layer cbaf391e6709 14.71MB / 78.09MB 3.8s
+#15 pushing layer 44a1545c17f0 10.77MB / 13.19MB 3.9s
+#15 pushing layer 542314a962a1 51.22MB / 105.11MB 4.1s
+#15 pushing layer 44a1545c17f0 13.06MB / 13.19MB 4.2s
+#15 pushing layer cbaf391e6709 19.53MB / 78.09MB 4.1s
+#15 pushing layer 44a1545c17f0 14.84MB / 13.19MB 4.3s
+#15 pushing layer 542314a962a1 57.90MB / 105.11MB 4.6s
+#15 pushing layer cbaf391e6709 24.35MB / 78.09MB 4.5s
+#15 pushing layer 44a1545c17f0 4.7s done
+#15 pushing layer 542314a962a1 64.03MB / 105.11MB 4.9s
+#15 pushing layer cbaf391e6709 29.71MB / 78.09MB 4.9s
+#15 pushing layer 542314a962a1 70.16MB / 105.11MB 5.2s
+#15 pushing layer cbaf391e6709 34.12MB / 78.09MB 5.2s
+#15 pushing layer cbaf391e6709 39.08MB / 78.09MB 5.6s
+#15 pushing layer 542314a962a1 78.51MB / 105.11MB 5.9s
+#15 pushing layer cbaf391e6709 45.09MB / 78.09MB 6.1s
+#15 pushing layer 542314a962a1 85.20MB / 105.11MB 6.4s
+#15 pushing layer cbaf391e6709 50.00MB / 78.09MB 6.4s
+#15 pushing layer cbaf391e6709 54.90MB / 78.09MB 6.8s
+#15 pushing layer 542314a962a1 91.88MB / 105.11MB 6.8s
+#15 pushing layer cbaf391e6709 59.79MB / 78.09MB 7.2s
+#15 pushing layer 542314a962a1 99.13MB / 105.11MB 7.3s
+#15 pushing layer 542314a962a1 105.11MB / 105.11MB 7.5s
+#15 pushing layer cbaf391e6709 65.21MB / 78.09MB 7.6s
+#15 pushing layer 542314a962a1 8.0s done
+#15 pushing layer cbaf391e6709 69.47MB / 78.09MB 8.3s
+#15 pushing layer cbaf391e6709 73.79MB / 78.09MB 8.7s
+#15 pushing layer cbaf391e6709 78.05MB / 78.09MB 9.4s
+#15 pushing layer cbaf391e6709 10.3s done
+#15 pushing layer 5f70bf18a086 11.2s done
+#15 DONE 12.6s
+2026/11/11 16:57:37 Using base gcr.io/distroless/base-debian13:latest@sha256:f5e95195e998742ff590b7569bae479accce1226e51ae6c3118954030121cdcb for go.ate.dev/substrate/cmd/atelet
+2026/11/11 16:57:38 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 16:57:38 Building go.ate.dev/substrate/cmd/atelet for linux/amd64
+2026/11/11 16:57:38 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/objectstore-plugin
+2026/11/11 16:57:38 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/atecontroller
+2026/11/11 16:57:38 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ate-idp-server
+2026/11/11 16:57:38 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/atenet
+2026/11/11 16:57:38 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateapi
+2026/11/11 16:57:39 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 16:57:39 Building go.ate.dev/substrate/cmd/ate-idp-server for linux/amd64
+2026/11/11 16:57:39 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 16:57:39 Building go.ate.dev/substrate/cmd/ateapi for linux/amd64
+2026/11/11 16:57:39 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 16:57:39 Building go.ate.dev/substrate/cmd/atecontroller for linux/amd64
+2026/11/11 16:57:39 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 16:57:39 Building go.ate.dev/substrate/cmd/objectstore-plugin for linux/amd64
+2026/11/11 16:57:39 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 16:57:39 Building go.ate.dev/substrate/cmd/atenet for linux/amd64
+2026/11/11 16:57:44 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ate-idp-server:latest
+2026/11/11 16:57:46 existing blob: sha256:c172f21841dff4c8cf45cde46589c1c2616cefe7e819965e92e6d3475c428aa0
+2026/11/11 16:57:46 existing blob: sha256:2cc7ee286bf3a9e6af5f71756d7fc8e22e23ce65fec9047d774511ffcef79fa8
+2026/11/11 16:57:46 existing blob: sha256:617b009a71d625ef77982b400cb9939dd5ed9809ebf50681a0520b7c08c0ca89
+2026/11/11 16:57:46 existing blob: sha256:a99dd1dd5eaf3e2099256f1a75c8e4c02a1d3a81b8e2bfd1735b1dd166b68a12
+2026/11/11 16:57:47 existing blob: sha256:d6b1b89eccacc15c2420b2776d72c1dae334a00805ed9af54bf2f71e4d536f28
+2026/11/11 16:57:47 existing blob: sha256:b839dfae01f66e15c6a8b63520557ed315bdfe036342fa7a0c537259f10d7a9a
+2026/11/11 16:57:47 existing blob: sha256:7c12895b777bcaa8ccae0605b4de635b68fc32d60fa08f421dc3818bf55ee212
+2026/11/11 16:57:47 existing blob: sha256:dd64bf2dd177757451a98fcdc999a339c35dee5d9872d8f4dc69c8f3c4dd0112
+2026/11/11 16:57:47 existing blob: sha256:ec1b04bf2eb2122e86781f791b03ea0cf6588694e0f4a88245250224c186cdf0
+2026/11/11 16:57:47 existing blob: sha256:3214acf345c0cc6bbdb56b698a41ccdefc624a09d6beb0d38b5de0b2303ecaf4
+2026/11/11 16:57:47 existing blob: sha256:52630fc75a18675c530ed9eba5f55eca09b03e91bd5bc15307918bbc1a7e7296
+2026/11/11 16:57:47 existing blob: sha256:ebddc55facdc6b1f7e0f30816a5fc7cc62f38abdf76c0a8b0a0ce52085754795
+2026/11/11 16:57:47 existing blob: sha256:4a2796d8ea5ef7ae1a64ba20ba56759987f49f2ea2091ddce6bade81c0ad1fa6
+2026/11/11 16:57:47 existing blob: sha256:2780920e5dbfbe103d03a583ed75345306e572ec5a48cb10361f046767d9f29a
+2026/11/11 16:57:47 pushed blob: sha256:a9f9381bf9b932fc90332f27bfebc05599520d2ca148d5195da562b461a4ff77
+2026/11/11 16:57:47 pushed blob: sha256:a7a5c05a10211f733ab19bc4d6635b8a3b543b84ece860bce8d4e7a02105fa81
+2026/11/11 16:57:47 pushed blob: sha256:ca8db02281b5f484423178a8c2403a25e17f28dc52cc253b0a44494e3d9331c5
+2026/11/11 16:57:47 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ate-idp-server:sha256-28bf915c7c98bf74acad9ca24b7008d2ac53cb2ad739925ff11599ec17cc0f94.sbom: digest: sha256:972804a7220d47d8db02915c6d1ceed23d959d6b2a0005d1bcea968ced9e6a4b size: 374
+2026/11/11 16:57:47 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ate-idp-server:sha256-28bf915c7c98bf74acad9ca24b7008d2ac53cb2ad739925ff11599ec17cc0f94.sbom
+2026/11/11 16:57:48 pushed blob: sha256:1fc9d605367062d29e25f5efd01e2343e2ed53acf3e96660f675cda168e49de9
+2026/11/11 16:57:48 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ate-idp-server:latest: digest: sha256:28bf915c7c98bf74acad9ca24b7008d2ac53cb2ad739925ff11599ec17cc0f94 size: 2938
+2026/11/11 16:57:48 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ate-idp-server@sha256:28bf915c7c98bf74acad9ca24b7008d2ac53cb2ad739925ff11599ec17cc0f94
+2026/11/11 16:57:55 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/objectstore-plugin:latest
+2026/11/11 16:57:57 existing blob: sha256:2cc7ee286bf3a9e6af5f71756d7fc8e22e23ce65fec9047d774511ffcef79fa8
+2026/11/11 16:57:57 existing blob: sha256:4a2796d8ea5ef7ae1a64ba20ba56759987f49f2ea2091ddce6bade81c0ad1fa6
+2026/11/11 16:57:57 existing blob: sha256:7c12895b777bcaa8ccae0605b4de635b68fc32d60fa08f421dc3818bf55ee212
+2026/11/11 16:57:57 existing blob: sha256:3214acf345c0cc6bbdb56b698a41ccdefc624a09d6beb0d38b5de0b2303ecaf4
+2026/11/11 16:57:57 existing blob: sha256:b839dfae01f66e15c6a8b63520557ed315bdfe036342fa7a0c537259f10d7a9a
+2026/11/11 16:57:57 existing blob: sha256:d6b1b89eccacc15c2420b2776d72c1dae334a00805ed9af54bf2f71e4d536f28
+2026/11/11 16:57:57 existing blob: sha256:dd64bf2dd177757451a98fcdc999a339c35dee5d9872d8f4dc69c8f3c4dd0112
+2026/11/11 16:57:57 existing blob: sha256:617b009a71d625ef77982b400cb9939dd5ed9809ebf50681a0520b7c08c0ca89
+2026/11/11 16:57:57 existing blob: sha256:2780920e5dbfbe103d03a583ed75345306e572ec5a48cb10361f046767d9f29a
+2026/11/11 16:57:57 existing blob: sha256:ebddc55facdc6b1f7e0f30816a5fc7cc62f38abdf76c0a8b0a0ce52085754795
+2026/11/11 16:57:57 existing blob: sha256:a99dd1dd5eaf3e2099256f1a75c8e4c02a1d3a81b8e2bfd1735b1dd166b68a12
+2026/11/11 16:57:57 existing blob: sha256:c172f21841dff4c8cf45cde46589c1c2616cefe7e819965e92e6d3475c428aa0
+2026/11/11 16:57:57 existing blob: sha256:52630fc75a18675c530ed9eba5f55eca09b03e91bd5bc15307918bbc1a7e7296
+2026/11/11 16:57:57 existing blob: sha256:ec1b04bf2eb2122e86781f791b03ea0cf6588694e0f4a88245250224c186cdf0
+2026/11/11 16:57:57 pushed blob: sha256:94316467eae4710673c5e9aedd2cc53d5af623e1dede0f5d419b8e0ff33ee6ee
+2026/11/11 16:57:57 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atecontroller:latest
+2026/11/11 16:57:58 pushed blob: sha256:1e7a69c2f50431ee52ad681f5b0117eaed9c41ed81d129ba0c2d30f8af20bede
+2026/11/11 16:57:58 pushed blob: sha256:574f163454a3ec96702924674dd7a18e0ee7f22c1fb164823d3f78736bc7090c
+2026/11/11 16:57:58 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atenet:latest
+2026/11/11 16:57:58 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/objectstore-plugin:sha256-4da1184b9942ca9374c5c21211b246f78fe17cd76113f1c53c0c7a6de257abf1.sbom: digest: sha256:7092f07f5d23dd9ee6e8b3d583b065fcdd7754aaa56762e95043dcfe832020da size: 374
+2026/11/11 16:57:58 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/objectstore-plugin:sha256-4da1184b9942ca9374c5c21211b246f78fe17cd76113f1c53c0c7a6de257abf1.sbom
+2026/11/11 16:57:58 pushed blob: sha256:04b451720c2c25b66e4ba55840cf9174e6d566f675bebfa10c63b395ee68c0d4
+2026/11/11 16:57:59 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/objectstore-plugin:latest: digest: sha256:4da1184b9942ca9374c5c21211b246f78fe17cd76113f1c53c0c7a6de257abf1 size: 2938
+2026/11/11 16:57:59 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/objectstore-plugin@sha256:4da1184b9942ca9374c5c21211b246f78fe17cd76113f1c53c0c7a6de257abf1
+2026/11/11 16:57:59 existing blob: sha256:7c12895b777bcaa8ccae0605b4de635b68fc32d60fa08f421dc3818bf55ee212
+2026/11/11 16:57:59 existing blob: sha256:3214acf345c0cc6bbdb56b698a41ccdefc624a09d6beb0d38b5de0b2303ecaf4
+2026/11/11 16:57:59 existing blob: sha256:4a2796d8ea5ef7ae1a64ba20ba56759987f49f2ea2091ddce6bade81c0ad1fa6
+2026/11/11 16:57:59 existing blob: sha256:52630fc75a18675c530ed9eba5f55eca09b03e91bd5bc15307918bbc1a7e7296
+2026/11/11 16:57:59 existing blob: sha256:2cc7ee286bf3a9e6af5f71756d7fc8e22e23ce65fec9047d774511ffcef79fa8
+2026/11/11 16:57:59 existing blob: sha256:dd64bf2dd177757451a98fcdc999a339c35dee5d9872d8f4dc69c8f3c4dd0112
+2026/11/11 16:57:59 existing blob: sha256:b839dfae01f66e15c6a8b63520557ed315bdfe036342fa7a0c537259f10d7a9a
+2026/11/11 16:57:59 existing blob: sha256:ebddc55facdc6b1f7e0f30816a5fc7cc62f38abdf76c0a8b0a0ce52085754795
+2026/11/11 16:57:59 existing blob: sha256:a99dd1dd5eaf3e2099256f1a75c8e4c02a1d3a81b8e2bfd1735b1dd166b68a12
+2026/11/11 16:57:59 existing blob: sha256:617b009a71d625ef77982b400cb9939dd5ed9809ebf50681a0520b7c08c0ca89
+2026/11/11 16:57:59 existing blob: sha256:c172f21841dff4c8cf45cde46589c1c2616cefe7e819965e92e6d3475c428aa0
+2026/11/11 16:57:59 existing blob: sha256:d6b1b89eccacc15c2420b2776d72c1dae334a00805ed9af54bf2f71e4d536f28
+2026/11/11 16:57:59 existing blob: sha256:2780920e5dbfbe103d03a583ed75345306e572ec5a48cb10361f046767d9f29a
+2026/11/11 16:57:59 existing blob: sha256:ec1b04bf2eb2122e86781f791b03ea0cf6588694e0f4a88245250224c186cdf0
+2026/11/11 16:57:59 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atelet:latest
+2026/11/11 16:57:59 pushed blob: sha256:60fdbc2cb9a67e358146c8771b15661e262c72eeb936060829b405b150639e34
+2026/11/11 16:57:59 pushed blob: sha256:90da5b611f4bac9d805a29a442a6e7b5aa225349314ee0827b9c202d5fc52673
+2026/11/11 16:58:00 pushed blob: sha256:e68a270a559e46b88a4b3ed97b069699e81f59f07721b313feb822790db319e5
+2026/11/11 16:58:00 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atecontroller:sha256-1fe0754d0d9e675193ad8a6d170ffc152bb68613ac9ea44d89673ef469cfd7cb.sbom: digest: sha256:79268f89d5c8df3a9d228ebef7ca945ed29dd5e78ef27ee37c298ef50cb8428c size: 374
+2026/11/11 16:58:00 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atecontroller:sha256-1fe0754d0d9e675193ad8a6d170ffc152bb68613ac9ea44d89673ef469cfd7cb.sbom
+2026/11/11 16:58:00 existing blob: sha256:7c12895b777bcaa8ccae0605b4de635b68fc32d60fa08f421dc3818bf55ee212
+2026/11/11 16:58:00 existing blob: sha256:2cc7ee286bf3a9e6af5f71756d7fc8e22e23ce65fec9047d774511ffcef79fa8
+2026/11/11 16:58:00 existing blob: sha256:ebddc55facdc6b1f7e0f30816a5fc7cc62f38abdf76c0a8b0a0ce52085754795
+2026/11/11 16:58:00 existing blob: sha256:4a2796d8ea5ef7ae1a64ba20ba56759987f49f2ea2091ddce6bade81c0ad1fa6
+2026/11/11 16:58:00 existing blob: sha256:617b009a71d625ef77982b400cb9939dd5ed9809ebf50681a0520b7c08c0ca89
+2026/11/11 16:58:00 existing blob: sha256:dd64bf2dd177757451a98fcdc999a339c35dee5d9872d8f4dc69c8f3c4dd0112
+2026/11/11 16:58:00 existing blob: sha256:b839dfae01f66e15c6a8b63520557ed315bdfe036342fa7a0c537259f10d7a9a
+2026/11/11 16:58:00 existing blob: sha256:d6b1b89eccacc15c2420b2776d72c1dae334a00805ed9af54bf2f71e4d536f28
+2026/11/11 16:58:00 existing blob: sha256:a99dd1dd5eaf3e2099256f1a75c8e4c02a1d3a81b8e2bfd1735b1dd166b68a12
+2026/11/11 16:58:00 existing blob: sha256:c172f21841dff4c8cf45cde46589c1c2616cefe7e819965e92e6d3475c428aa0
+2026/11/11 16:58:00 existing blob: sha256:3214acf345c0cc6bbdb56b698a41ccdefc624a09d6beb0d38b5de0b2303ecaf4
+2026/11/11 16:58:00 existing blob: sha256:2780920e5dbfbe103d03a583ed75345306e572ec5a48cb10361f046767d9f29a
+2026/11/11 16:58:00 existing blob: sha256:ec1b04bf2eb2122e86781f791b03ea0cf6588694e0f4a88245250224c186cdf0
+2026/11/11 16:58:00 existing blob: sha256:52630fc75a18675c530ed9eba5f55eca09b03e91bd5bc15307918bbc1a7e7296
+2026/11/11 16:58:00 pushed blob: sha256:c4324aeb068985a32bd6dce756732a6e2a3901639669a70848fa1f1b9e197ea1
+2026/11/11 16:58:00 pushed blob: sha256:e4b15b9cd2446ebf4cdef8b9a2989a6b310e48460fc65da53c7e7bdf92926163
+2026/11/11 16:58:00 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atecontroller:latest: digest: sha256:1fe0754d0d9e675193ad8a6d170ffc152bb68613ac9ea44d89673ef469cfd7cb size: 2938
+2026/11/11 16:58:00 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atecontroller@sha256:1fe0754d0d9e675193ad8a6d170ffc152bb68613ac9ea44d89673ef469cfd7cb
+2026/11/11 16:58:00 pushed blob: sha256:15093588b9c054fde185fc78a5d5a601980889047afd26743e564a5b37623a95
+2026/11/11 16:58:01 pushed blob: sha256:5fdc6ac704770c88be8f5a72b9b637aeb0709d363e59458b5ec86ddff230fd57
+2026/11/11 16:58:01 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atenet:sha256-a15306827eb01cc5ca4acff2f38b948f8ca2ea4ca3bcf0c15d868d09366ad0cb.sbom: digest: sha256:552d4ad4ac2e9cd257d560c97cba5ae22744771b7dca2c7761fe60147adb3e56 size: 374
+2026/11/11 16:58:01 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atenet:sha256-a15306827eb01cc5ca4acff2f38b948f8ca2ea4ca3bcf0c15d868d09366ad0cb.sbom
+2026/11/11 16:58:01 existing blob: sha256:2cc7ee286bf3a9e6af5f71756d7fc8e22e23ce65fec9047d774511ffcef79fa8
+2026/11/11 16:58:01 existing blob: sha256:ebddc55facdc6b1f7e0f30816a5fc7cc62f38abdf76c0a8b0a0ce52085754795
+2026/11/11 16:58:01 existing blob: sha256:7c12895b777bcaa8ccae0605b4de635b68fc32d60fa08f421dc3818bf55ee212
+2026/11/11 16:58:01 existing blob: sha256:b839dfae01f66e15c6a8b63520557ed315bdfe036342fa7a0c537259f10d7a9a
+2026/11/11 16:58:01 existing blob: sha256:a99dd1dd5eaf3e2099256f1a75c8e4c02a1d3a81b8e2bfd1735b1dd166b68a12
+2026/11/11 16:58:01 existing blob: sha256:dd64bf2dd177757451a98fcdc999a339c35dee5d9872d8f4dc69c8f3c4dd0112
+2026/11/11 16:58:01 existing blob: sha256:ec1b04bf2eb2122e86781f791b03ea0cf6588694e0f4a88245250224c186cdf0
+2026/11/11 16:58:01 existing blob: sha256:3214acf345c0cc6bbdb56b698a41ccdefc624a09d6beb0d38b5de0b2303ecaf4
+2026/11/11 16:58:01 existing blob: sha256:4a2796d8ea5ef7ae1a64ba20ba56759987f49f2ea2091ddce6bade81c0ad1fa6
+2026/11/11 16:58:01 existing blob: sha256:2780920e5dbfbe103d03a583ed75345306e572ec5a48cb10361f046767d9f29a
+2026/11/11 16:58:01 existing blob: sha256:617b009a71d625ef77982b400cb9939dd5ed9809ebf50681a0520b7c08c0ca89
+2026/11/11 16:58:01 existing blob: sha256:c172f21841dff4c8cf45cde46589c1c2616cefe7e819965e92e6d3475c428aa0
+2026/11/11 16:58:01 existing blob: sha256:d6b1b89eccacc15c2420b2776d72c1dae334a00805ed9af54bf2f71e4d536f28
+2026/11/11 16:58:01 existing blob: sha256:52630fc75a18675c530ed9eba5f55eca09b03e91bd5bc15307918bbc1a7e7296
+2026/11/11 16:58:01 pushed blob: sha256:5b9788cfad51c9a4c40a66af9b62ddea239e5dd71e222f9c41ce41c684d179d4
+2026/11/11 16:58:02 pushed blob: sha256:3cdf035ba5ea212ef44ff17b2a29727d8e61bac00640f8983a90f4f3fd1360a0
+2026/11/11 16:58:02 pushed blob: sha256:9a61bfb7bf1e51ff055a1111d19d025bfe93d3f894899d4e4a44d0127c32eed9
+2026/11/11 16:58:02 pushed blob: sha256:cac2ae0193cb073e7492050b05fc342a888651b4bbc966908c8793f889c299ba
+2026/11/11 16:58:02 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atelet:sha256-b3f3b002b1e03b9e84caeb7ce33dfc11f062b7df130983527ff10628c05cc531.sbom: digest: sha256:b040e5b17825277da730e9bf25693f4a0c1d7da682c32eca0ad531121fb0689d size: 375
+2026/11/11 16:58:02 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atelet:sha256-b3f3b002b1e03b9e84caeb7ce33dfc11f062b7df130983527ff10628c05cc531.sbom
+2026/11/11 16:58:02 pushed blob: sha256:bd8962e292918c50c90edebd9684c053bc386b9c5503acd8fec75d0c6f93a0b7
+2026/11/11 16:58:02 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateapi:latest
+2026/11/11 16:58:02 pushed blob: sha256:810e2b405a0884835290e120ef380aa14dd1f53198a0cfa2260147e736d82cd5
+2026/11/11 16:58:02 pushed blob: sha256:b96fe2995f90d0ef0bf14f9b4a67b5f4e77d478e6108166e0565adc9efd6e4a3
+2026/11/11 16:58:03 pushed blob: sha256:1c147ce3e97ed3a961e8d466c1336097cd0c985239645a6af37f523cb75d5fe6
+2026/11/11 16:58:03 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atenet:latest: digest: sha256:a15306827eb01cc5ca4acff2f38b948f8ca2ea4ca3bcf0c15d868d09366ad0cb size: 2938
+2026/11/11 16:58:03 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atenet@sha256:a15306827eb01cc5ca4acff2f38b948f8ca2ea4ca3bcf0c15d868d09366ad0cb
+2026/11/11 16:58:03 pushed blob: sha256:3803652d702b9d76c8628903f4e70e0d88dac1b6ab519664e44537c4ef9cac9a
+2026/11/11 16:58:03 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atelet:latest: digest: sha256:b3f3b002b1e03b9e84caeb7ce33dfc11f062b7df130983527ff10628c05cc531 size: 3565
+2026/11/11 16:58:03 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atelet@sha256:b3f3b002b1e03b9e84caeb7ce33dfc11f062b7df130983527ff10628c05cc531
+2026/11/11 16:58:04 existing blob: sha256:ec1b04bf2eb2122e86781f791b03ea0cf6588694e0f4a88245250224c186cdf0
+2026/11/11 16:58:04 existing blob: sha256:ebddc55facdc6b1f7e0f30816a5fc7cc62f38abdf76c0a8b0a0ce52085754795
+2026/11/11 16:58:04 existing blob: sha256:b839dfae01f66e15c6a8b63520557ed315bdfe036342fa7a0c537259f10d7a9a
+2026/11/11 16:58:04 existing blob: sha256:617b009a71d625ef77982b400cb9939dd5ed9809ebf50681a0520b7c08c0ca89
+2026/11/11 16:58:04 existing blob: sha256:4a2796d8ea5ef7ae1a64ba20ba56759987f49f2ea2091ddce6bade81c0ad1fa6
+2026/11/11 16:58:04 existing blob: sha256:7c12895b777bcaa8ccae0605b4de635b68fc32d60fa08f421dc3818bf55ee212
+2026/11/11 16:58:04 existing blob: sha256:c172f21841dff4c8cf45cde46589c1c2616cefe7e819965e92e6d3475c428aa0
+2026/11/11 16:58:04 existing blob: sha256:d6b1b89eccacc15c2420b2776d72c1dae334a00805ed9af54bf2f71e4d536f28
+2026/11/11 16:58:04 existing blob: sha256:3214acf345c0cc6bbdb56b698a41ccdefc624a09d6beb0d38b5de0b2303ecaf4
+2026/11/11 16:58:04 existing blob: sha256:a99dd1dd5eaf3e2099256f1a75c8e4c02a1d3a81b8e2bfd1735b1dd166b68a12
+2026/11/11 16:58:04 existing blob: sha256:2cc7ee286bf3a9e6af5f71756d7fc8e22e23ce65fec9047d774511ffcef79fa8
+2026/11/11 16:58:04 existing blob: sha256:2780920e5dbfbe103d03a583ed75345306e572ec5a48cb10361f046767d9f29a
+2026/11/11 16:58:04 existing blob: sha256:52630fc75a18675c530ed9eba5f55eca09b03e91bd5bc15307918bbc1a7e7296
+2026/11/11 16:58:04 existing blob: sha256:dd64bf2dd177757451a98fcdc999a339c35dee5d9872d8f4dc69c8f3c4dd0112
+2026/11/11 16:58:04 pushed blob: sha256:17e4e2139f58f8e94008030f33d9c3b0bf13da2ffdca261cff0f6f9f9ceb22e1
+2026/11/11 16:58:04 pushed blob: sha256:a7dfa7658148c52cd0870b1784792d109637c54d4bc4216697fa0f0ca2f322c5
+2026/11/11 16:58:04 pushed blob: sha256:2f1eec5229881048a33f66d869121e08b594e8e941e2f852f5904147def75f4f
+2026/11/11 16:58:05 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateapi:sha256-99e329cd0c341e8021fbc52f596165fb0d674eb39be5d779b38c855fcdffd26c.sbom: digest: sha256:e6545a848aea82f5bae08b9264c204cb274f137e28120b6f2748e203351a1921 size: 375
+2026/11/11 16:58:05 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateapi:sha256-99e329cd0c341e8021fbc52f596165fb0d674eb39be5d779b38c855fcdffd26c.sbom
+2026/11/11 16:58:05 pushed blob: sha256:8fd7d411a4b50ba45b363064cc5fe97aff5962aa0ee155a14f964b1346f6ed13
+2026/11/11 16:58:06 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateapi:latest: digest: sha256:99e329cd0c341e8021fbc52f596165fb0d674eb39be5d779b38c855fcdffd26c size: 2938
+2026/11/11 16:58:06 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateapi@sha256:99e329cd0c341e8021fbc52f596165fb0d674eb39be5d779b38c855fcdffd26c
+  (ko resolve -f - took 36.315s)
+  (delete of 8 objects took 1.094s)
+Warning: system:serviceaccount:ate-system:ate-client is a bootstrap owner, so anyone who can mint a token for it is a global owner of this install. It is the default so the demos, benchmarks and e2e tests work; for a shared or production install, set --ateapi-authz-bootstrap-owners (ATE_API_AUTHZ_BOOTSTRAP_OWNERS) to your operators' own principals. See docs/authorization.md.
+  (apply of 40 objects took 7.676s)
+[1;36m[step]: create_egress_mitm_ca_pool_secret[0m
+  created pool secret ate-system/egress-mitm-ca-pool
+2026/11/11 16:58:19 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/atenet
+2026/11/11 16:58:20 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 16:58:20 Building go.ate.dev/substrate/cmd/atenet for linux/amd64
+2026/11/11 16:58:28 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atenet:latest
+2026/11/11 16:58:30 existing manifest: latest@sha256:a15306827eb01cc5ca4acff2f38b948f8ca2ea4ca3bcf0c15d868d09366ad0cb
+2026/11/11 16:58:30 existing manifest: sha256-a15306827eb01cc5ca4acff2f38b948f8ca2ea4ca3bcf0c15d868d09366ad0cb.sbom@sha256:552d4ad4ac2e9cd257d560c97cba5ae22744771b7dca2c7761fe60147adb3e56
+2026/11/11 16:58:30 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atenet:sha256-a15306827eb01cc5ca4acff2f38b948f8ca2ea4ca3bcf0c15d868d09366ad0cb.sbom
+2026/11/11 16:58:30 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/atenet@sha256:a15306827eb01cc5ca4acff2f38b948f8ca2ea4ca3bcf0c15d868d09366ad0cb
+  (ko resolve -f - took 13.857s)
+  (apply of 4 objects took 0.728s)
+[1;36m[step]: Waiting for ATE system components to be ready...[0m
+  (rollout status deployment/ate-api-server took 0.135s)
+  (rollout status deployment/ate-idp-server took 0.142s)
+  (rollout status deployment/ate-controller took 0.149s)
+  (rollout status deployment/atenet-router took 0.136s)
+  (rollout status deployment/atenet-egress took 16.134s)
+  (rollout status daemonset/atelet took 0.198s)
+recorded this configuration in /usr/local/google/home/luizaoj/.cache/ate-setup/installs/gke_gke-luizaoj-test-dev_us-west1-c_sched-exp.yaml

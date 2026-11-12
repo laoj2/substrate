@@ -1,0 +1,1 @@
+{"time":"2026-11-12T04:45:29.807956901Z","level":"INFO","msg":"Detached actor from its full node to resume it on another node","actor":{"type":"*ateapi.Actor","atespace":"c70-09","name":"se-00237"},"node":"gke-sched-exp-substrate-node-pool-554dd396-kpmb","trace_id":"a690a21ac54a5fd07f27eed8faac2780","span_id":"94c377099f48f80f","trace_flags":"00"}

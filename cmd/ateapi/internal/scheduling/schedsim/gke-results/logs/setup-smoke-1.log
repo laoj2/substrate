@@ -1,0 +1,98 @@
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads created
+2026/11/11 17:01:09 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 17:01:09 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 17:01:09 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 17:01:21 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 17:01:26 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom: digest: sha256:14b25746c7d16205900fe29166b82a7358219ab2c8d5a9576af4c44ef322c714 size: 374
+2026/11/11 17:01:26 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 17:01:26 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest: digest: sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece size: 2938
+2026/11/11 17:01:26 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 17:01:54 Using base gcr.io/distroless/static-debian13:latest@sha256:15f8637509792e05b97d83451b0b6ccfa4abd548f997e406ac1e72c87fe1fa78 for go.ate.dev/substrate/cmd/benchmarking/glutton
+2026/11/11 17:01:55 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 17:01:55 Building go.ate.dev/substrate/cmd/benchmarking/glutton for linux/amd64
+2026/11/11 17:02:05 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/glutton-4b3667ae99a537903d62dbe4a02d5524:latest
+2026/11/11 17:02:11 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/glutton-4b3667ae99a537903d62dbe4a02d5524:sha256-417b6a927ba994a96a68296297341d052ce6beabaf9c19ace1eb208065b22f0d.sbom: digest: sha256:b24a7d65fe6666742d3c356aa59b4aab39727e6956eb672ef9e68b95129766c7 size: 374
+2026/11/11 17:02:11 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/glutton-4b3667ae99a537903d62dbe4a02d5524:sha256-417b6a927ba994a96a68296297341d052ce6beabaf9c19ace1eb208065b22f0d.sbom
+2026/11/11 17:02:12 us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/glutton-4b3667ae99a537903d62dbe4a02d5524:latest: digest: sha256:417b6a927ba994a96a68296297341d052ce6beabaf9c19ace1eb208065b22f0d size: 2938
+2026/11/11 17:02:12 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/glutton-4b3667ae99a537903d62dbe4a02d5524@sha256:417b6a927ba994a96a68296297341d052ce6beabaf9c19ace1eb208065b22f0d
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+ATESPACE              NAME         GOLDEN TAG   ERROR   AGE
+benchmark-workloads   sched-250m                        0s
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+Warning: no --token-file given; acting as the shared identity system:serviceaccount:ate-system:ate-client rather than as yourself. Pass --token-file to act as yourself.
+template sched-250m has no golden snapshot

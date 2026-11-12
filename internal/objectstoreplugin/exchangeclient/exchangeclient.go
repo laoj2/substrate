@@ -34,6 +34,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/utils/lru"
@@ -57,6 +58,10 @@ type Config struct {
 	CAFile string
 	// ServerName is the DNS name expected on that certificate.
 	ServerName string
+	// Resolver, when set, resolves an Address in its scheme, as
+	// k8sresolver does for a k8s:/// target. Nil uses gRPC's registered
+	// resolvers.
+	Resolver resolver.Builder
 }
 
 // Source implements objectstoreplugin.Credentials for GCS.
@@ -90,7 +95,11 @@ func New(cfg Config) (*Source, error) {
 		return nil, fmt.Errorf("exchangeclient: while loading the exchange CA bundle: %w", err)
 	}
 	creds := credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS13, RootCAs: pool, ServerName: cfg.ServerName})
-	conn, err := grpc.NewClient(cfg.Address, grpc.WithTransportCredentials(creds), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	opts := []grpc.DialOption{grpc.WithTransportCredentials(creds), grpc.WithStatsHandler(otelgrpc.NewClientHandler())}
+	if cfg.Resolver != nil {
+		opts = append(opts, grpc.WithResolvers(cfg.Resolver))
+	}
+	conn, err := grpc.NewClient(cfg.Address, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("exchangeclient: while creating the exchange client: %w", err)
 	}

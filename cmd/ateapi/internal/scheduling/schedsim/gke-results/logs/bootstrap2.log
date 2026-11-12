@@ -1,0 +1,41 @@
+2026/11/11 16:54:42 INFO Starting full bootstrap...
+2026/11/11 16:54:42 INFO Step 1/10: Enabling required APIs...
+2026/11/11 16:54:42 INFO Batch enabling services services="artifactregistry.googleapis.com, cloudresourcemanager.googleapis.com, container.googleapis.com, iam.googleapis.com, iamcredentials.googleapis.com, networkconnectivity.googleapis.com, serviceusage.googleapis.com, storage.googleapis.com, logging.googleapis.com, monitoring.googleapis.com, cloudtrace.googleapis.com, telemetry.googleapis.com"
+2026/11/11 16:54:44 INFO Successfully enabled required services.
+2026/11/11 16:54:44 INFO Step 2/10: Creating Artifact Registry repository...
+2026/11/11 16:54:45 INFO Artifact Registry repository is ready repository=projects/gke-luizaoj-test-dev/locations/us-west1/repositories/ate-images
+2026/11/11 16:54:45 INFO Step 3/10: Creating the GKE node service account...
+2026/11/11 16:54:45 INFO Node service account exists. Skipping create. gsa=ate-gke-node@gke-luizaoj-test-dev.iam.gserviceaccount.com
+2026/11/11 16:54:46 INFO IAM policy already has the node service account role. Skipping update. project=gke-luizaoj-test-dev
+2026/11/11 16:54:46 INFO Step 4/10: Creating GKE Cluster...
+2026/11/11 16:54:46 INFO Checking if cluster exists cluster=sched-exp location=us-west1-c
+2026/11/11 16:54:47 INFO Cluster exists. Checking attributes... cluster=sched-exp
+2026/11/11 16:54:47 INFO Cluster WorkloadIdentityConfig match perfectly. cluster=sched-exp
+2026/11/11 16:54:47 INFO Cluster EnableK8SBetaApis match perfectly. cluster=sched-exp
+2026/11/11 16:54:47 INFO Cluster ManagedOpentelemetryConfig match perfectly. cluster=sched-exp
+2026/11/11 16:54:47 INFO Step 5/10: Creating GCS buckets for snapshots and micro-VM assets...
+2026/11/11 16:54:47 INFO Checking if Bucket exists bucket=sched-exp-gke-luizaoj-test-dev
+2026/11/11 16:54:47 INFO Bucket does not exist. Creating... bucket=sched-exp-gke-luizaoj-test-dev
+2026/11/11 16:54:48 INFO Checking if Bucket exists bucket=sched-exp-gke-luizaoj-test-dev-assets
+2026/11/11 16:54:48 INFO Bucket does not exist. Creating... bucket=sched-exp-gke-luizaoj-test-dev-assets
+2026/11/11 16:54:49 INFO Step 6/10: Granting GKE Node permissions...
+2026/11/11 16:54:50 INFO Granting the nodes read access to the artifact repository repository=projects/gke-luizaoj-test-dev/locations/us-west1/repositories/ate-images members=serviceAccount:ate-gke-node@gke-luizaoj-test-dev.iam.gserviceaccount.com
+2026/11/11 16:54:51 INFO Step 7/10: Granting Atelet permissions...
+2026/11/11 16:54:51 INFO Granting atelet read access to the artifact repository repository=projects/gke-luizaoj-test-dev/locations/us-west1/repositories/ate-images members=principal://iam.googleapis.com/projects/855065451714/locations/global/workloadIdentityPools/gke-luizaoj-test-dev.svc.id.goog/subject/ns/ate-system/sa/atelet
+2026/11/11 16:54:51 INFO atelet pulls actor images; grant it read access to each repository your actor images come from command="gcloud artifacts repositories add-iam-policy-binding <repository> --project=<project> --location=<location> --member=principal://iam.googleapis.com/projects/855065451714/locations/global/workloadIdentityPools/gke-luizaoj-test-dev.svc.id.goog/subject/ns/ate-system/sa/atelet --role=roles/artifactregistry.reader"
+2026/11/11 16:54:51 INFO Step 8/10: Creating the snapshot transfer service account...
+2026/11/11 16:54:52 INFO Service account exists. Skipping create. gsa=ate-snapshot-transfer@gke-luizaoj-test-dev.iam.gserviceaccount.com
+2026/11/11 16:54:52 INFO Service account IAM policy is already correct gsa=ate-snapshot-transfer@gke-luizaoj-test-dev.iam.gserviceaccount.com
+2026/11/11 16:54:52 INFO Step 9/10: Creating IAM policy bindings for the buckets...
+2026/11/11 16:54:53 INFO Adding role to member bucket=sched-exp-gke-luizaoj-test-dev role=roles/storage.objectAdmin member=principal://iam.googleapis.com/projects/855065451714/locations/global/workloadIdentityPools/gke-luizaoj-test-dev.svc.id.goog/subject/ns/ate-system/sa/ate-api-server
+2026/11/11 16:54:53 INFO Adding role to member bucket=sched-exp-gke-luizaoj-test-dev role=roles/storage.bucketViewer member=principal://iam.googleapis.com/projects/855065451714/locations/global/workloadIdentityPools/gke-luizaoj-test-dev.svc.id.goog/subject/ns/ate-system/sa/ate-api-server
+2026/11/11 16:54:53 INFO Adding role to member bucket=sched-exp-gke-luizaoj-test-dev role=roles/storage.objectAdmin member=serviceAccount:ate-snapshot-transfer@gke-luizaoj-test-dev.iam.gserviceaccount.com
+2026/11/11 16:54:53 INFO Adding role to member bucket=sched-exp-gke-luizaoj-test-dev role=roles/storage.bucketViewer member=serviceAccount:ate-snapshot-transfer@gke-luizaoj-test-dev.iam.gserviceaccount.com
+2026/11/11 16:54:53 INFO Setting IAM policy for bucket bucket=sched-exp-gke-luizaoj-test-dev
+2026/11/11 16:54:53 INFO Adding role to member bucket=sched-exp-gke-luizaoj-test-dev-assets role=roles/storage.objectViewer member=principal://iam.googleapis.com/projects/855065451714/locations/global/workloadIdentityPools/gke-luizaoj-test-dev.svc.id.goog/subject/ns/ate-system/sa/atelet
+2026/11/11 16:54:53 INFO Setting IAM policy for bucket bucket=sched-exp-gke-luizaoj-test-dev-assets
+2026/11/11 16:54:53 INFO Step 10/10: Creating Monitoring Dashboards...
+2026/11/11 16:54:54 INFO Updating dashboard displayName="Substrate gRPC Server — latency / QPS / errors" name=projects/855065451714/dashboards/a1f795c4-0bb4-44b9-90ad-01ad71246b0c file=ate-grpc-dashboard.json
+2026/11/11 16:54:54 INFO Updating dashboard displayName="Substrate Routing & E2E Latency" name=projects/855065451714/dashboards/77fa521d-9c75-48c3-a096-ae918ca392f6 file=ate-e2e-latency-dashboard.json
+2026/11/11 16:54:54 INFO Updating dashboard displayName="Substrate Snapshot Size & QPS" name=projects/855065451714/dashboards/2896a118-6189-4d96-a10f-89e4145e6fd6 file=ate-snapshot-dashboard.json
+2026/11/11 16:54:55 INFO Bootstrap completed successfully.

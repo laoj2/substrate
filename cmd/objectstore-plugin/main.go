@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -36,6 +37,7 @@ import (
 	"github.com/spf13/pflag"
 	objectstorev1 "go.ate.dev/substrate/api/objectstore/v1"
 	"go.ate.dev/substrate/internal/installdefaults"
+	"go.ate.dev/substrate/internal/k8sresolver"
 	"go.ate.dev/substrate/internal/nodepath"
 	"go.ate.dev/substrate/internal/objectstore"
 	"go.ate.dev/substrate/internal/objectstoreplugin"
@@ -50,6 +52,8 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 const usage = `usage: objectstore-plugin <node|control|healthcheck> [flags]`
@@ -73,7 +77,7 @@ func main() {
 	timeout := flags.Duration("timeout", 5*time.Second, "healthcheck mode: how long to wait for the plugin to report that it is serving")
 	apiHost := installdefaults.APIServiceHost(installdefaults.NamespaceFromPodEnv())
 	var ncfg exchangeclient.Config
-	flags.StringVar(&ncfg.Address, "exchange-address", net.JoinHostPort(apiHost, strconv.Itoa(exchange.DefaultPort)), "node mode on GCS: address of the credential exchange the control sidecar serves, where each transfer's actor JWT is traded for a token scoped to the actor")
+	flags.StringVar(&ncfg.Address, "exchange-address", k8sresolver.Scheme+":///"+net.JoinHostPort(apiHost, strconv.Itoa(exchange.DefaultPort)), "node mode on GCS: address of the credential exchange the control sidecar serves, where each transfer's actor JWT is traded for a token scoped to the actor. A k8s:/// target resolves through the Service's EndpointSlices")
 	flags.StringVar(&ncfg.CAFile, "exchange-ca-file", serviceDNSTrustBundle, "node mode on GCS: CA bundle used to verify the exchange")
 	flags.StringVar(&ncfg.ServerName, "exchange-server-name", apiHost, "node mode on GCS: DNS name expected on the exchange's certificate, the API Service in the pod's namespace")
 	var xcfg exchangeConfig
@@ -133,6 +137,18 @@ func main() {
 		// exchange. S3 has no per-actor credential and keeps the pod's own.
 		var nodeOpts []objectstoreplugin.NodeOption
 		if !objectstorage.UsesS3() {
+			// The API Service is headless. gRPC's DNS resolver keeps the IPs
+			// of replaced ate-api-server pods, and the first exchange after
+			// a rollout waits out its 20s connect timeout before it
+			// re-resolves. EndpointSlices track the pods as atelet's own
+			// ateapi client does.
+			if strings.HasPrefix(ncfg.Address, k8sresolver.Scheme+":") {
+				k8sClient, err := newKubeClient()
+				if err != nil {
+					serverboot.Fatal(ctx, "Failed to set up the Kubernetes client for the exchange address", err)
+				}
+				ncfg.Resolver = k8sresolver.NewBuilder(k8sClient)
+			}
 			creds, err := exchangeclient.New(ncfg)
 			if err != nil {
 				serverboot.Fatal(ctx, "Failed to set up the credential exchange client", err)
@@ -259,4 +275,14 @@ func parseCapacity(s string) (int64, error) {
 		return 0, fmt.Errorf("%q is not a positive whole number of bytes", s)
 	}
 	return n, nil
+}
+
+// newKubeClient builds a client from the pod's service account, which the
+// node sidecar shares with atelet.
+func newKubeClient() (kubernetes.Interface, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("while loading the in-cluster config: %w", err)
+	}
+	return kubernetes.NewForConfig(config)
 }

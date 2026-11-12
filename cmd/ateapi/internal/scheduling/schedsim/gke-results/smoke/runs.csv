@@ -1,0 +1,2 @@
+scenario,pattern,policy,seed,resumes,placed,no_capacity,waited_placed,failed,other_errors,ttp_p50_ms,ttp_p95_ms,ttp_p99_ms,held_ratio,nonempty_over_lb,empty_frac,util_cv,hot_frac,big_pool_share,low_held_ratio,empty_drop_0,empty_drop_60,empty_drop_180,empty_drop_480,empty_at_scale,scale_keep,displaced_newest,displaced_emptiest
+g-gke8,smoke,prefixsat:1:0.2,1,92.0000,92.0000,0.0000,0.0000,0.0000,0.0000,157.1423,1388.7383,20402.6015,2.7805,2.2600,0.6689,1.8112,0.0968,NaN,NaN,NaN,NaN,NaN,NaN,11.0000,8.0000,6.0000,5.0000

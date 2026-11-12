@@ -1,0 +1,2 @@
+{"time":"2026-11-12T05:07:52.212981164Z","level":"INFO","msg":"schedexp assignment retry","reason":"filled_up","actor":"c70-10/se-00107","trace_id":"c3f33e0b7d4fcbcd7fbe275741ffac29","span_id":"a4f6c17f224c2de2","trace_flags":"00"}
+{"time":"2026-11-12T05:07:55.888927303Z","level":"INFO","msg":"Detached actor from its full node to resume it on another node","actor":{"type":"*ateapi.Actor","atespace":"c70-10","name":"se-00199"},"node":"gke-sched-exp-substrate-node-pool-554dd396-nx4q","trace_id":"8a4da146ce1314d9b895cf26d4b1b26f","span_id":"d7862486b4b348ac","trace_flags":"00"}

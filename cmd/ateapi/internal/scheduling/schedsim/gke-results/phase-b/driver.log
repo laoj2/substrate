@@ -1,0 +1,141 @@
+2026/11/11 17:25:13 connected to 3 ate-api-server replicas
+2026/11/11 17:25:13 reset round 0: 0/240 actors not suspended
+2026/11/11 17:25:14 reset done: 24 workers, all empty
+2026/11/11 17:25:14 warm-up resume succeeded after 0 failures
+2026/11/11 17:25:14 reset round 0: 0/240 actors not suspended
+2026/11/11 17:25:14 reset done: 24 workers, all empty
+2026/11/11 17:30:17 load done after 5m3s, waiting for in-flight cycles
+2026/11/11 17:30:53 done: resumes=551 placed=551 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=192ms held=4.25 empty_drop=[]
+2026/11/11 17:31:58 connected to 3 ate-api-server replicas
+2026/11/11 17:31:58 reset round 0: 0/240 actors not suspended
+2026/11/11 17:31:58 reset done: 24 workers, all empty
+2026/11/11 17:31:59 warm-up resume succeeded after 0 failures
+2026/11/11 17:31:59 reset round 0: 0/240 actors not suspended
+2026/11/11 17:31:59 reset done: 24 workers, all empty
+2026/11/11 17:47:59 load done after 16m0s, waiting for in-flight cycles
+2026/11/11 17:53:12 done: resumes=1802 placed=1802 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=527ms held=4.29 empty_drop=[0 1 1 1]
+E1111 17:53:12.047881  642846 portforward.go:525] "Error copying from local connection to remote stream" err="writeto tcp4 127.0.0.1:42503->127.0.0.1:42322: websocket: close sent" logger="UnhandledError" localPort=42503 remotePort=443
+2026/11/11 17:55:28 connected to 3 ate-api-server replicas
+2026/11/11 17:55:29 reset round 0: 0/240 actors not suspended
+2026/11/11 17:55:29 reset done: 24 workers, all empty
+2026/11/11 17:55:29 warm-up resume succeeded after 0 failures
+2026/11/11 17:55:29 reset round 0: 0/240 actors not suspended
+2026/11/11 17:55:30 reset done: 24 workers, all empty
+2026/11/11 18:00:33 load done after 5m3s, waiting for in-flight cycles
+2026/11/11 18:01:11 done: resumes=577 placed=577 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=767ms held=2.71 empty_drop=[]
+E1111 18:01:11.159620 1695885 portforward.go:525] "Error copying from local connection to remote stream" err="EOF" logger="UnhandledError" localPort=44841 remotePort=443
+2026/11/11 18:02:16 connected to 3 ate-api-server replicas
+2026/11/11 18:02:16 reset round 0: 0/240 actors not suspended
+2026/11/11 18:02:16 reset done: 24 workers, all empty
+2026/11/11 18:02:17 warm-up resume succeeded after 0 failures
+2026/11/11 18:02:17 reset round 0: 0/240 actors not suspended
+2026/11/11 18:02:17 reset done: 24 workers, all empty
+2026/11/11 18:18:17 load done after 16m0s, waiting for in-flight cycles
+2026/11/11 18:24:06 done: resumes=1816 placed=1816 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=513ms held=4.05 empty_drop=[0 0 1 5]
+2026/11/11 18:26:42 connected to 3 ate-api-server replicas
+2026/11/11 18:26:42 reset round 0: 0/240 actors not suspended
+2026/11/11 18:26:42 reset done: 24 workers, all empty
+2026/11/11 18:26:43 warm-up resume succeeded after 0 failures
+2026/11/11 18:26:43 reset round 0: 0/240 actors not suspended
+2026/11/11 18:26:43 reset done: 24 workers, all empty
+2026/11/11 18:42:43 load done after 16m0s, waiting for in-flight cycles
+2026/11/11 18:47:53 done: resumes=1747 placed=1747 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=706ms held=4.07 empty_drop=[0 5 7 15]
+2026/11/11 18:49:01 connected to 3 ate-api-server replicas
+2026/11/11 18:49:02 reset round 0: 0/240 actors not suspended
+2026/11/11 18:49:02 reset done: 24 workers, all empty
+2026/11/11 18:49:02 warm-up resume succeeded after 0 failures
+2026/11/11 18:49:02 reset round 0: 0/240 actors not suspended
+2026/11/11 18:49:02 reset done: 24 workers, all empty
+2026/11/11 18:54:05 load done after 5m3s, waiting for in-flight cycles
+2026/11/11 18:54:39 done: resumes=574 placed=574 no_capacity=2 waited=2 failed=0 other=0 [] ttp_p99=742ms held=2.66 empty_drop=[]
+2026/11/11 18:56:57 connected to 3 ate-api-server replicas
+2026/11/11 18:56:58 reset round 0: 0/240 actors not suspended
+2026/11/11 18:56:58 reset done: 24 workers, all empty
+2026/11/11 18:56:58 warm-up resume succeeded after 0 failures
+2026/11/11 18:56:59 reset round 0: 0/240 actors not suspended
+2026/11/11 18:56:59 reset done: 24 workers, all empty
+2026/11/11 19:02:02 load done after 5m3s, waiting for in-flight cycles
+2026/11/11 19:02:37 done: resumes=573 placed=573 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=524ms held=2.84 empty_drop=[]
+2026/11/11 19:05:02 connected to 3 ate-api-server replicas
+2026/11/11 19:05:03 reset round 0: 0/240 actors not suspended
+2026/11/11 19:05:03 reset done: 24 workers, all empty
+2026/11/11 19:05:04 warm-up resume succeeded after 0 failures
+2026/11/11 19:05:04 reset round 0: 0/240 actors not suspended
+2026/11/11 19:05:04 reset done: 24 workers, all empty
+2026/11/11 19:10:07 load done after 5m3s, waiting for in-flight cycles
+2026/11/11 19:10:41 done: resumes=585 placed=585 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=224ms held=3.93 empty_drop=[]
+2026/11/11 19:11:51 connected to 3 ate-api-server replicas
+2026/11/11 19:11:51 reset round 0: 0/240 actors not suspended
+2026/11/11 19:11:51 reset done: 24 workers, all empty
+2026/11/11 19:11:52 warm-up resume succeeded after 0 failures
+2026/11/11 19:11:52 reset round 0: 0/240 actors not suspended
+2026/11/11 19:11:52 reset done: 24 workers, all empty
+2026/11/11 19:27:52 load done after 16m0s, waiting for in-flight cycles
+2026/11/11 19:33:05 done: resumes=1803 placed=1803 no_capacity=5 waited=5 failed=0 other=0 [] ttp_p99=554ms held=4.03 empty_drop=[0 2 0 2]
+2026/11/11 19:50:49 connected to 3 ate-api-server replicas
+2026/11/11 19:50:49 reset round 0: 0/240 actors not suspended
+2026/11/11 19:50:49 reset done: 24 workers, all empty
+2026/11/11 19:50:50 warm-up resume succeeded after 0 failures
+2026/11/11 19:50:50 reset round 0: 0/240 actors not suspended
+2026/11/11 19:50:50 reset done: 24 workers, all empty
+2026/11/11 19:55:53 load done after 5m3s, waiting for in-flight cycles
+2026/11/11 19:56:33 done: resumes=577 placed=577 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=772ms held=2.53 empty_drop=[]
+2026/11/11 19:57:32 connected to 3 ate-api-server replicas
+2026/11/11 19:57:32 reset round 0: 0/240 actors not suspended
+2026/11/11 19:57:32 reset done: 24 workers, all empty
+2026/11/11 19:57:33 warm-up resume succeeded after 0 failures
+2026/11/11 19:57:33 reset round 0: 0/240 actors not suspended
+2026/11/11 19:57:33 reset done: 24 workers, all empty
+2026/11/11 20:13:33 load done after 16m0s, waiting for in-flight cycles
+2026/11/11 20:19:46 done: resumes=1757 placed=1757 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=537ms held=3.09 empty_drop=[0 6 5 13]
+2026/11/11 20:24:13 connected to 3 ate-api-server replicas
+2026/11/11 20:24:14 reset round 0: 0/240 actors not suspended
+2026/11/11 20:24:14 reset done: 24 workers, all empty
+2026/11/11 20:24:15 warm-up resume succeeded after 0 failures
+2026/11/11 20:24:15 reset round 0: 0/240 actors not suspended
+2026/11/11 20:24:15 reset done: 24 workers, all empty
+2026/11/11 20:40:15 load done after 16m0s, waiting for in-flight cycles
+2026/11/11 20:45:24 done: resumes=1773 placed=1773 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=552ms held=4.29 empty_drop=[0 1 4 8]
+2026/11/11 20:46:30 connected to 3 ate-api-server replicas
+2026/11/11 20:46:31 reset round 0: 0/240 actors not suspended
+2026/11/11 20:46:31 reset done: 24 workers, all empty
+2026/11/11 20:46:32 warm-up resume succeeded after 0 failures
+2026/11/11 20:46:32 reset round 0: 0/240 actors not suspended
+2026/11/11 20:46:32 reset done: 24 workers, all empty
+2026/11/11 20:51:35 load done after 5m3s, waiting for in-flight cycles
+2026/11/11 20:52:11 done: resumes=544 placed=544 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=560ms held=2.66 empty_drop=[]
+2026/11/11 20:54:30 connected to 3 ate-api-server replicas
+2026/11/11 20:54:30 reset round 0: 0/240 actors not suspended
+2026/11/11 20:54:30 reset done: 24 workers, all empty
+2026/11/11 20:54:31 warm-up resume succeeded after 0 failures
+2026/11/11 20:54:31 reset round 0: 0/240 actors not suspended
+2026/11/11 20:54:31 reset done: 24 workers, all empty
+2026/11/11 21:10:31 load done after 16m0s, waiting for in-flight cycles
+2026/11/11 21:16:08 done: resumes=1736 placed=1736 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=248ms held=4.08 empty_drop=[0 0 1 1]
+2026/11/11 21:18:29 connected to 3 ate-api-server replicas
+2026/11/11 21:18:30 reset round 0: 0/240 actors not suspended
+2026/11/11 21:18:30 reset done: 24 workers, all empty
+2026/11/11 21:18:31 warm-up resume succeeded after 0 failures
+2026/11/11 21:18:31 reset round 0: 0/240 actors not suspended
+2026/11/11 21:18:31 reset done: 24 workers, all empty
+2026/11/11 21:21:04 resume se-00146: rpc error: code = DeadlineExceeded desc = context deadline exceeded
+2026/11/11 21:21:08 resume se-00192: rpc error: code = DeadlineExceeded desc = context deadline exceeded
+2026/11/11 21:21:13 resume se-00068: rpc error: code = DeadlineExceeded desc = context deadline exceeded
+2026/11/11 21:23:34 load done after 5m3s, waiting for in-flight cycles
+2026/11/11 21:24:12 done: resumes=553 placed=550 no_capacity=0 waited=0 failed=0 other=3 [DeadlineExceeded=3] ttp_p99=20784ms held=2.71 empty_drop=[]
+2026/11/11 21:26:29 connected to 3 ate-api-server replicas
+2026/11/11 21:26:30 reset round 0: 0/240 actors not suspended
+2026/11/11 21:26:30 reset done: 24 workers, all empty
+2026/11/11 21:26:31 warm-up resume succeeded after 0 failures
+2026/11/11 21:26:31 reset round 0: 0/240 actors not suspended
+2026/11/11 21:26:31 reset done: 24 workers, all empty
+2026/11/11 21:42:31 load done after 16m0s, waiting for in-flight cycles
+2026/11/11 21:48:42 done: resumes=1858 placed=1858 no_capacity=43 waited=22 failed=0 other=0 [] ttp_p99=1548ms held=4.48 empty_drop=[0 0 1 2]
+2026/11/12 00:53:55 connected to 3 ate-api-server replicas
+2026/11/12 00:53:56 reset round 0: 0/240 actors not suspended
+2026/11/12 00:53:56 reset done: 24 workers, all empty
+2026/11/12 00:53:56 warm-up resume succeeded after 0 failures
+2026/11/12 00:53:57 reset round 0: 0/240 actors not suspended
+2026/11/12 00:53:57 reset done: 24 workers, all empty
+2026/11/12 00:59:00 load done after 5m3s, waiting for in-flight cycles
+2026/11/12 00:59:35 done: resumes=578 placed=578 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=572ms held=2.38 empty_drop=[]

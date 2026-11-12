@@ -1,0 +1,8 @@
+2026/11/11 17:20:25 connected to 3 ate-api-server replicas
+2026/11/11 17:20:26 reset round 0: 0/240 actors not suspended
+2026/11/11 17:20:26 reset done: 24 workers, all empty
+2026/11/11 17:20:28 warm-up resume succeeded after 0 failures
+2026/11/11 17:20:28 reset round 0: 0/240 actors not suspended
+2026/11/11 17:20:29 reset done: 24 workers, all empty
+2026/11/11 17:21:29 load done after 1m0s, waiting for in-flight cycles
+2026/11/11 17:22:07 done: resumes=92 placed=92 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=20403ms held=2.78 empty_drop=[]

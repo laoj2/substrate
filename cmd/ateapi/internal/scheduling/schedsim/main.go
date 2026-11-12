@@ -21,6 +21,12 @@
 // with assignmentBackoff when the worker filled up. A resume that finds no
 // capacity, or exhausts its bind retries, is retried by the client every
 // second until clientTimeout.
+//
+// A suspended actor is pinned to its node until -detach-delay passes, and
+// restores there from its local snapshot. Otherwise it restores from its
+// external snapshot: on its first resume, once the pin expired, or after a
+// detach from a full node, which first uploads the local snapshot. The restore
+// defaults are calibrated on the GKE runs in gke-results/.
 package main
 
 import (
@@ -58,7 +64,7 @@ const (
 )
 
 var (
-	outDir         = flag.String("out", "/tmp/schedsim", "output directory")
+	outDir         = flag.String("out", "schedsim-out", "output directory")
 	seeds          = flag.Int("seeds", 10, "repetitions per cell")
 	largeSeeds     = flag.Int("large-seeds", 3, "repetitions per cell for the large scenario")
 	bindBase       = flag.Duration("bind-base", 3*time.Millisecond, "bind latency outside the row lock")
@@ -66,9 +72,14 @@ var (
 	pollEvery      = flag.Duration("poll", 50*time.Millisecond, "outbox poll interval of the other replica")
 	only           = flag.String("only", "", "comma-separated scenario names to run (default all)")
 	replicasN      = flag.Int("replicas", 2, "ate-api-server replicas, each with its own worker cache")
-	workersPerNode = flag.Int("workers-per-node", 0, "workers per node; 0 puts every worker on one node and disables snapshot pinning")
+	workersPerNode = flag.Int("workers-per-node", 3, "workers per node, 3 as in the GKE runs; 0 puts every worker on one node and disables snapshot pinning")
 	detachDelay    = flag.Duration("detach-delay", 30*time.Minute, "how long a suspended actor stays pinned to its node (atelet --snapshot-detach-delay)")
-	detachCost     = flag.Duration("detach-cost", 50*time.Millisecond, "time a detach from a full node adds to the resume")
+	detachCost     = flag.Duration("detach-cost", 350*time.Millisecond, "time a detach from a full node spends uploading the local snapshot before the resume is rescheduled")
+	restoreLocal   = flag.Duration("restore-local", 75*time.Millisecond, "median restore from a node-local snapshot")
+	restoreLocal99 = flag.Duration("restore-local-p99", 100*time.Millisecond, "p99 restore from a node-local snapshot")
+	restoreExt     = flag.Duration("restore-external", 80*time.Millisecond, "median restore from an external snapshot")
+	restoreExt99   = flag.Duration("restore-external-p99", 250*time.Millisecond, "p99 restore from an external snapshot")
+	resumeOverhead = flag.Duration("resume-overhead", 85*time.Millisecond, "ResumeActor time outside scheduling and the restore: RPCs and the wakeup probe")
 	longFrac       = flag.Float64("long-frac", 0.03, "ramp-down: fraction of actors holding 5 to 10 minutes; rates are scaled to keep the same occupancy")
 	holdDist       = flag.String("hold", "uniform", "hold time distribution: uniform (20 to 40s, plus ramp-down's long tail) or lognormal (mean 30s, sigma 1.5, capped at 30m)")
 	fillNoWait     = flag.Bool("fill-no-backoff", false, "a bind that finds the worker full retries at once instead of sleeping assignmentBackoff; attempts still count toward its limit")
@@ -132,6 +143,11 @@ type pattern struct {
 	dropRate float64
 	// scaleAt is when the scale-down is simulated. Defaults to the end.
 	scaleAt time.Duration
+	// lateMarks adds empty-worker counts 25 and 40 minutes after the drop,
+	// before and after most pins expire.
+	lateMarks bool
+	// optIn patterns run only when -patterns names them.
+	optIn bool
 }
 
 func scenarios() []scenario {
@@ -184,6 +200,25 @@ func scenarios() []scenario {
 			population: 4000,
 			rateScale:  5,
 		},
+		{
+			// Real data plane on GKE: 8 nodes, 3 workers of 2 CPU and 4Gi each.
+			// Real workers report 1000 slots; CPU fits 8 actors of 250m.
+			// C = 192, rateScale = C/640, population = 1.25*C.
+			name:       "g-gke8",
+			pools:      []poolSpec{{"pool", 24, 1000, 2000, 4 * gi}},
+			sizes:      []actorSize{{1, 250, 512 * mi}},
+			population: 240,
+			rateScale:  0.3,
+		},
+		{
+			// g-gke8 at a lower rate: g-gke8's peaks reached 0.84 to 1.00 of
+			// the 192 slots, so 0.3*0.70/0.91 aims the peak at about 70%.
+			name:       "g-gke8-70",
+			pools:      []poolSpec{{"pool", 24, 1000, 2000, 4 * gi}},
+			sizes:      []actorSize{{1, 250, 512 * mi}},
+			population: 240,
+			rateScale:  0.23,
+		},
 	}
 }
 
@@ -218,6 +253,17 @@ func patterns() []pattern {
 			dropRate: 3,
 			scaleAt:  13 * m,
 		},
+		{
+			// ramp-down with a 45 minute low phase, so pins expire during it.
+			name:      "ramp-down-long",
+			steps:     []step{{5 * m, 15}, {45 * m, 3}, {3 * m, 0}},
+			longTail:  true,
+			dropAt:    5 * m,
+			dropRate:  3,
+			scaleAt:   50 * m,
+			lateMarks: true,
+			optIn:     true,
+		},
 	}
 }
 
@@ -240,6 +286,7 @@ func policies() []scheduling.Policy {
 		{Name: "prefixsat", K: 1, Watermark: 0.3},
 		{Name: "prefixsat", K: 2, Watermark: 0.2},
 		{Name: "prefixbest", K: 1, Watermark: 0.2},
+		{Name: "prefixpack", K: 1, Watermark: 0.2},
 	}
 }
 
@@ -254,7 +301,7 @@ func policyName(p scheduling.Policy) string {
 		return fmt.Sprintf("oldestofd-%d", p.K)
 	case "watermark":
 		return fmt.Sprintf("watermark-%.0f", p.Watermark*100)
-	case "prefix", "prefixsat", "prefixbest":
+	case "prefix", "prefixsat", "prefixbest", "prefixpack":
 		return fmt.Sprintf("%s-%d-%.0f", p.Name, p.K, p.Watermark*100)
 	}
 	return p.Name
@@ -363,7 +410,11 @@ type metrics struct {
 	filledUp       int
 	timeToPlace    []float64 // ms
 	bindLatency    []float64 // ms, pick to commit of the attempt that bound
-	waitedPlaced   int       // placed after at least one ErrNoCapacity
+	resumeTime     []float64 // ms, first request to restored, as ResumeActor returns
+	restoresLocal  int
+	restoresExt    int
+	peakFill       float64 // highest mean worker utilization over samples
+	waitedPlaced   int     // placed after at least one ErrNoCapacity
 	scheduleCalls  int
 	scheduleWall   time.Duration
 
@@ -382,6 +433,7 @@ type metrics struct {
 	// drain, for patterns with a drop
 	emptyAtDrop      []int // empty workers at drop+0,+60s,+180s,+480s
 	emptyNodesAtDrop []int // nodes whose workers are all empty, same times
+	emptyLate        []int // empty workers at drop+25m,+40m, for lateMarks
 	detaches         int
 	lowHeldRatio     float64
 	lowSamples       int
@@ -571,6 +623,11 @@ func (s *sim) run() {
 			})
 		}
 	}
+	if s.pat.lateMarks {
+		for _, off := range []time.Duration{25 * time.Minute, 40 * time.Minute} {
+			s.at(s.pat.dropAt+off, func() { s.m.emptyLate = append(s.m.emptyLate, s.emptyWorkers()) })
+		}
+	}
 	scaleAt := s.pat.scaleAt
 	if scaleAt == 0 {
 		scaleAt = s.endAt
@@ -749,11 +806,35 @@ func (s *sim) bind(req *request, rep int, pod string) {
 	s.m.bindLatency = append(s.m.bindLatency, float64(s.now-req.attemptAt)/float64(time.Millisecond))
 	s.placeBins[[2]int64{int64(s.created[pod]), int64(s.now / time.Second)}]++
 	s.wake(a, true)
+	// A pinned actor restores from its local snapshot. Any other restores
+	// from its external one: a detach or an expired pin deleted the local
+	// snapshot.
+	restored := s.now + *resumeOverhead
+	if len(c.RequiredNodes) > 0 {
+		s.m.restoresLocal++
+		restored += s.lognormal(*restoreLocal, *restoreLocal99)
+	} else {
+		s.m.restoresExt++
+		restored += s.lognormal(*restoreExt, *restoreExt99)
+	}
+	s.m.resumeTime = append(s.m.resumeTime, float64(restored-a.firstReq)/float64(time.Millisecond))
 	hold := a.hold
 	if *lifetimeHint == 0 {
 		hold = s.hold()
 	}
-	s.at(s.now+hold, func() { s.suspend(a, booking) })
+	s.at(restored+hold, func() { s.suspend(a, booking) })
+}
+
+// lognormal draws a duration with the given median and p99.
+func (s *sim) lognormal(median, p99 time.Duration) time.Duration {
+	if median <= 0 {
+		return 0
+	}
+	sigma := 0.0
+	if p99 > median {
+		sigma = math.Log(float64(p99)/float64(median)) / 2.326
+	}
+	return time.Duration(float64(median) * math.Exp(sigma*s.rng.NormFloat64()))
 }
 
 func (s *sim) hold() time.Duration {
@@ -912,6 +993,7 @@ func (s *sim) sample() {
 	}
 	s.m.sumEmptyFrac += float64(len(s.truth)-nonEmpty) / float64(len(s.truth))
 	mean, sd := meanSD(utils)
+	s.m.peakFill = max(s.m.peakFill, mean)
 	if mean > 0 {
 		s.m.sumCV += sd / mean
 	}
@@ -1003,6 +1085,7 @@ var columns = []string{
 	"peak_placements_per_worker_sec", "schedule_us",
 	"detaches", "nodes", "empty_nodes_drop_180", "empty_nodes_drop_480",
 	"ttp_p999_ms", "ttp_max_ms", "empty_low", "target_keep", "target_displaced_newest", "target_displaced_emptiest", "removable_newest",
+	"resume_p50_ms", "resume_p99_ms", "restores_local", "restores_external", "peak_fill", "empty_drop_1500", "empty_drop_2400",
 }
 
 func (s *sim) result(seed int) result {
@@ -1050,6 +1133,18 @@ func (s *sim) result(seed int) result {
 		"removable_newest":               float64(m.removableNewest),
 		"empty_nodes_drop_180":           math.NaN(),
 		"empty_nodes_drop_480":           math.NaN(),
+		"resume_p50_ms":                  pct(m.resumeTime, 0.5),
+		"resume_p99_ms":                  pct(m.resumeTime, 0.99),
+		"restores_local":                 float64(m.restoresLocal),
+		"restores_external":              float64(m.restoresExt),
+		"peak_fill":                      m.peakFill,
+		"empty_drop_1500":                math.NaN(),
+		"empty_drop_2400":                math.NaN(),
+	}
+	for i, k := range []string{"empty_drop_1500", "empty_drop_2400"} {
+		if i < len(m.emptyLate) {
+			row[k] = float64(m.emptyLate[i])
+		}
 	}
 	if len(m.emptyNodesAtDrop) == 4 {
 		row["empty_nodes_drop_180"] = float64(m.emptyNodesAtDrop[2])
@@ -1095,7 +1190,8 @@ func main() {
 			n = *largeSeeds
 		}
 		for _, pat := range patterns() {
-			if *onlyPatterns != "" && !slices.Contains(strings.Split(*onlyPatterns, ","), pat.name) {
+			named := slices.Contains(strings.Split(*onlyPatterns, ","), pat.name)
+			if (*onlyPatterns != "" || pat.optIn) && !named {
 				continue
 			}
 			for _, pol := range policies() {

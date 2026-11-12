@@ -1,0 +1,2 @@
+atespace,filled_up,detaches,crashes,note
+c70-05,5,7,0,stream_ok=no; counts re-read from Cloud Logging over [t_start,t_end] match the stream (c70-04 cross-check: 0/2/0 both ways)

@@ -1,0 +1,2103 @@
+diff --git a/cmd/ateapi/internal/scheduling/schedsim/kind.go b/cmd/ateapi/internal/scheduling/schedsim/kind.go
+index 704e34777..a7ef9b788 100644
+--- a/cmd/ateapi/internal/scheduling/schedsim/kind.go
++++ b/cmd/ateapi/internal/scheduling/schedsim/kind.go
+@@ -23,6 +23,7 @@ import (
+ 	"encoding/csv"
+ 	"fmt"
+ 	"log"
++	"maps"
+ 	"math"
+ 	"math/rand"
+ 	"os"
+@@ -99,7 +100,20 @@ type kindRun struct {
+ 
+ 	seriesMu sync.Mutex
+ 	series   [][]string
++	nodes    [][]string
+ 	stats    kindAgg
++
++	resumeMu  sync.Mutex
++	resumeLog [][]string
++}
++
++// logResume records one resume so its latency can be joined with server logs
++// by actor and time.
++func (r *kindRun) logResume(a kindActor, start time.Time, outcome string) {
++	r.resumeMu.Lock()
++	defer r.resumeMu.Unlock()
++	r.resumeLog = append(r.resumeLog, []string{a.name, strconv.FormatInt(start.UnixMilli(), 10),
++		fmt.Sprintf("%.1f", float64(time.Since(start))/float64(time.Millisecond)), outcome})
+ }
+ 
+ type kindActor struct {
+@@ -492,6 +506,7 @@ func (r *kindRun) cycle(ctx context.Context, a kindActor) {
+ 			sawNoCap = true
+ 			if time.Since(first)+clientRetry > clientTimeout {
+ 				r.failed.Add(1)
++				r.logResume(a, first, "failed")
+ 				return
+ 			}
+ 			time.Sleep(clientRetry)
+@@ -499,11 +514,13 @@ func (r *kindRun) cycle(ctx context.Context, a kindActor) {
+ 		}
+ 		r.otherErr.Add(1)
+ 		r.countErr(err)
++		r.logResume(a, first, "error:"+status.Code(err).String())
+ 		log.Printf("resume %s: %v", a.name, err)
+ 		_, _ = r.client().SuspendActor(ctx, &ateapi.SuspendActorRequest{Actor: r.ref(a.name)})
+ 		return
+ 	}
+ 	r.placed.Add(1)
++	r.logResume(a, first, "placed")
+ 	if sawNoCap {
+ 		r.waitedPlaced.Add(1)
+ 	}
+@@ -591,9 +608,28 @@ func (r *kindRun) sample(el time.Duration, ws []*ateapi.Worker) {
+ 	if allocS > 0 {
+ 		held = min(heldS/allocS, heldC/allocC, heldM/allocM)
+ 	}
++	type nodeTot struct{ actors, workers, nonEmpty int }
++	byNode := map[string]*nodeTot{}
++	for _, w := range ws {
++		nt := byNode[w.GetNodeName()]
++		if nt == nil {
++			nt = &nodeTot{}
++			byNode[w.GetNodeName()] = nt
++		}
++		n := int(w.GetStatus().GetAllocated().GetActors())
++		nt.actors += n
++		nt.workers++
++		if n > 0 {
++			nt.nonEmpty++
++		}
++	}
+ 	r.seriesMu.Lock()
+ 	defer r.seriesMu.Unlock()
+ 	r.series = append(r.series, []string{strconv.Itoa(int(el / time.Second)), strconv.Itoa(awake), strconv.Itoa(nonEmpty), strconv.Itoa(lb), strconv.Itoa(len(ws) - nonEmpty), fmt.Sprintf("%.3f", held)})
++	for _, node := range slices.Sorted(maps.Keys(byNode)) {
++		nt := byNode[node]
++		r.nodes = append(r.nodes, []string{strconv.Itoa(int(el / time.Second)), node, strconv.Itoa(nt.actors), strconv.Itoa(nt.workers), strconv.Itoa(nt.nonEmpty)})
++	}
+ 	if awake == 0 {
+ 		return
+ 	}
+@@ -706,6 +742,16 @@ func (r *kindRun) write() {
+ 			w.Write(append([]string{r.sc.name, r.pat.name, r.f.policy, strconv.FormatInt(r.f.seed, 10)}, s...))
+ 		}
+ 	})
++	appendCSV(filepath.Join(r.f.out, "nodes.csv"), []string{"scenario", "pattern", "policy", "seed", "t", "node", "actors", "workers", "nonempty_workers"}, func(w *csv.Writer) {
++		for _, s := range r.nodes {
++			w.Write(append([]string{r.sc.name, r.pat.name, r.f.policy, strconv.FormatInt(r.f.seed, 10)}, s...))
++		}
++	})
++	appendCSV(filepath.Join(r.f.out, "resumes.csv"), []string{"scenario", "pattern", "policy", "seed", "actor", "start_unix_ms", "ttp_ms", "outcome"}, func(w *csv.Writer) {
++		for _, s := range r.resumeLog {
++			w.Write(append([]string{r.sc.name, r.pat.name, r.f.policy, strconv.FormatInt(r.f.seed, 10)}, s...))
++		}
++	})
+ 	var errs []string
+ 	r.errCodes.Range(func(k, v any) bool {
+ 		errs = append(errs, fmt.Sprintf("%s=%d", k, v.(*atomic.Int64).Load()))
+diff --git a/cmd/ateapi/internal/scheduling/schedsim/main.go b/cmd/ateapi/internal/scheduling/schedsim/main.go
+index 269e7b215..0d18de723 100644
+--- a/cmd/ateapi/internal/scheduling/schedsim/main.go
++++ b/cmd/ateapi/internal/scheduling/schedsim/main.go
+@@ -21,6 +21,12 @@
+ // with assignmentBackoff when the worker filled up. A resume that finds no
+ // capacity, or exhausts its bind retries, is retried by the client every
+ // second until clientTimeout.
++//
++// A suspended actor is pinned to its node until -detach-delay passes, and
++// restores there from its local snapshot. Otherwise it restores from its
++// external snapshot: on its first resume, once the pin expired, or after a
++// detach from a full node, which first uploads the local snapshot. The restore
++// defaults are calibrated on the GKE runs in gke-results/.
+ package main
+ 
+ import (
+@@ -58,7 +64,7 @@ const (
+ )
+ 
+ var (
+-	outDir         = flag.String("out", "/tmp/schedsim", "output directory")
++	outDir         = flag.String("out", "schedsim-out", "output directory")
+ 	seeds          = flag.Int("seeds", 10, "repetitions per cell")
+ 	largeSeeds     = flag.Int("large-seeds", 3, "repetitions per cell for the large scenario")
+ 	bindBase       = flag.Duration("bind-base", 3*time.Millisecond, "bind latency outside the row lock")
+@@ -66,9 +72,14 @@ var (
+ 	pollEvery      = flag.Duration("poll", 50*time.Millisecond, "outbox poll interval of the other replica")
+ 	only           = flag.String("only", "", "comma-separated scenario names to run (default all)")
+ 	replicasN      = flag.Int("replicas", 2, "ate-api-server replicas, each with its own worker cache")
+-	workersPerNode = flag.Int("workers-per-node", 0, "workers per node; 0 puts every worker on one node and disables snapshot pinning")
++	workersPerNode = flag.Int("workers-per-node", 3, "workers per node, 3 as in the GKE runs; 0 puts every worker on one node and disables snapshot pinning")
+ 	detachDelay    = flag.Duration("detach-delay", 30*time.Minute, "how long a suspended actor stays pinned to its node (atelet --snapshot-detach-delay)")
+-	detachCost     = flag.Duration("detach-cost", 50*time.Millisecond, "time a detach from a full node adds to the resume")
++	detachCost     = flag.Duration("detach-cost", 350*time.Millisecond, "time a detach from a full node spends uploading the local snapshot before the resume is rescheduled")
++	restoreLocal   = flag.Duration("restore-local", 75*time.Millisecond, "median restore from a node-local snapshot")
++	restoreLocal99 = flag.Duration("restore-local-p99", 100*time.Millisecond, "p99 restore from a node-local snapshot")
++	restoreExt     = flag.Duration("restore-external", 80*time.Millisecond, "median restore from an external snapshot")
++	restoreExt99   = flag.Duration("restore-external-p99", 250*time.Millisecond, "p99 restore from an external snapshot")
++	resumeOverhead = flag.Duration("resume-overhead", 85*time.Millisecond, "ResumeActor time outside scheduling and the restore: RPCs and the wakeup probe")
+ 	longFrac       = flag.Float64("long-frac", 0.03, "ramp-down: fraction of actors holding 5 to 10 minutes; rates are scaled to keep the same occupancy")
+ 	holdDist       = flag.String("hold", "uniform", "hold time distribution: uniform (20 to 40s, plus ramp-down's long tail) or lognormal (mean 30s, sigma 1.5, capped at 30m)")
+ 	fillNoWait     = flag.Bool("fill-no-backoff", false, "a bind that finds the worker full retries at once instead of sleeping assignmentBackoff; attempts still count toward its limit")
+@@ -132,6 +143,11 @@ type pattern struct {
+ 	dropRate float64
+ 	// scaleAt is when the scale-down is simulated. Defaults to the end.
+ 	scaleAt time.Duration
++	// lateMarks adds empty-worker counts 25 and 40 minutes after the drop,
++	// before and after most pins expire.
++	lateMarks bool
++	// optIn patterns run only when -patterns names them.
++	optIn bool
+ }
+ 
+ func scenarios() []scenario {
+@@ -184,6 +200,25 @@ func scenarios() []scenario {
+ 			population: 4000,
+ 			rateScale:  5,
+ 		},
++		{
++			// Real data plane on GKE: 8 nodes, 3 workers of 2 CPU and 4Gi each.
++			// Real workers report 1000 slots; CPU fits 8 actors of 250m.
++			// C = 192, rateScale = C/640, population = 1.25*C.
++			name:       "g-gke8",
++			pools:      []poolSpec{{"pool", 24, 1000, 2000, 4 * gi}},
++			sizes:      []actorSize{{1, 250, 512 * mi}},
++			population: 240,
++			rateScale:  0.3,
++		},
++		{
++			// g-gke8 at a lower rate: g-gke8's peaks reached 0.84 to 1.00 of
++			// the 192 slots, so 0.3*0.70/0.91 aims the peak at about 70%.
++			name:       "g-gke8-70",
++			pools:      []poolSpec{{"pool", 24, 1000, 2000, 4 * gi}},
++			sizes:      []actorSize{{1, 250, 512 * mi}},
++			population: 240,
++			rateScale:  0.23,
++		},
+ 	}
+ }
+ 
+@@ -218,6 +253,17 @@ func patterns() []pattern {
+ 			dropRate: 3,
+ 			scaleAt:  13 * m,
+ 		},
++		{
++			// ramp-down with a 45 minute low phase, so pins expire during it.
++			name:      "ramp-down-long",
++			steps:     []step{{5 * m, 15}, {45 * m, 3}, {3 * m, 0}},
++			longTail:  true,
++			dropAt:    5 * m,
++			dropRate:  3,
++			scaleAt:   50 * m,
++			lateMarks: true,
++			optIn:     true,
++		},
+ 	}
+ }
+ 
+@@ -240,6 +286,7 @@ func policies() []scheduling.Policy {
+ 		{Name: "prefixsat", K: 1, Watermark: 0.3},
+ 		{Name: "prefixsat", K: 2, Watermark: 0.2},
+ 		{Name: "prefixbest", K: 1, Watermark: 0.2},
++		{Name: "prefixpack", K: 1, Watermark: 0.2},
+ 	}
+ }
+ 
+@@ -254,7 +301,7 @@ func policyName(p scheduling.Policy) string {
+ 		return fmt.Sprintf("oldestofd-%d", p.K)
+ 	case "watermark":
+ 		return fmt.Sprintf("watermark-%.0f", p.Watermark*100)
+-	case "prefix", "prefixsat", "prefixbest":
++	case "prefix", "prefixsat", "prefixbest", "prefixpack":
+ 		return fmt.Sprintf("%s-%d-%.0f", p.Name, p.K, p.Watermark*100)
+ 	}
+ 	return p.Name
+@@ -363,7 +410,11 @@ type metrics struct {
+ 	filledUp       int
+ 	timeToPlace    []float64 // ms
+ 	bindLatency    []float64 // ms, pick to commit of the attempt that bound
+-	waitedPlaced   int       // placed after at least one ErrNoCapacity
++	resumeTime     []float64 // ms, first request to restored, as ResumeActor returns
++	restoresLocal  int
++	restoresExt    int
++	peakFill       float64 // highest mean worker utilization over samples
++	waitedPlaced   int     // placed after at least one ErrNoCapacity
+ 	scheduleCalls  int
+ 	scheduleWall   time.Duration
+ 
+@@ -382,6 +433,7 @@ type metrics struct {
+ 	// drain, for patterns with a drop
+ 	emptyAtDrop      []int // empty workers at drop+0,+60s,+180s,+480s
+ 	emptyNodesAtDrop []int // nodes whose workers are all empty, same times
++	emptyLate        []int // empty workers at drop+25m,+40m, for lateMarks
+ 	detaches         int
+ 	lowHeldRatio     float64
+ 	lowSamples       int
+@@ -571,6 +623,11 @@ func (s *sim) run() {
+ 			})
+ 		}
+ 	}
++	if s.pat.lateMarks {
++		for _, off := range []time.Duration{25 * time.Minute, 40 * time.Minute} {
++			s.at(s.pat.dropAt+off, func() { s.m.emptyLate = append(s.m.emptyLate, s.emptyWorkers()) })
++		}
++	}
+ 	scaleAt := s.pat.scaleAt
+ 	if scaleAt == 0 {
+ 		scaleAt = s.endAt
+@@ -749,11 +806,35 @@ func (s *sim) bind(req *request, rep int, pod string) {
+ 	s.m.bindLatency = append(s.m.bindLatency, float64(s.now-req.attemptAt)/float64(time.Millisecond))
+ 	s.placeBins[[2]int64{int64(s.created[pod]), int64(s.now / time.Second)}]++
+ 	s.wake(a, true)
++	// A pinned actor restores from its local snapshot. Any other restores
++	// from its external one: a detach or an expired pin deleted the local
++	// snapshot.
++	restored := s.now + *resumeOverhead
++	if len(c.RequiredNodes) > 0 {
++		s.m.restoresLocal++
++		restored += s.lognormal(*restoreLocal, *restoreLocal99)
++	} else {
++		s.m.restoresExt++
++		restored += s.lognormal(*restoreExt, *restoreExt99)
++	}
++	s.m.resumeTime = append(s.m.resumeTime, float64(restored-a.firstReq)/float64(time.Millisecond))
+ 	hold := a.hold
+ 	if *lifetimeHint == 0 {
+ 		hold = s.hold()
+ 	}
+-	s.at(s.now+hold, func() { s.suspend(a, booking) })
++	s.at(restored+hold, func() { s.suspend(a, booking) })
++}
++
++// lognormal draws a duration with the given median and p99.
++func (s *sim) lognormal(median, p99 time.Duration) time.Duration {
++	if median <= 0 {
++		return 0
++	}
++	sigma := 0.0
++	if p99 > median {
++		sigma = math.Log(float64(p99)/float64(median)) / 2.326
++	}
++	return time.Duration(float64(median) * math.Exp(sigma*s.rng.NormFloat64()))
+ }
+ 
+ func (s *sim) hold() time.Duration {
+@@ -912,6 +993,7 @@ func (s *sim) sample() {
+ 	}
+ 	s.m.sumEmptyFrac += float64(len(s.truth)-nonEmpty) / float64(len(s.truth))
+ 	mean, sd := meanSD(utils)
++	s.m.peakFill = max(s.m.peakFill, mean)
+ 	if mean > 0 {
+ 		s.m.sumCV += sd / mean
+ 	}
+@@ -1003,6 +1085,7 @@ var columns = []string{
+ 	"peak_placements_per_worker_sec", "schedule_us",
+ 	"detaches", "nodes", "empty_nodes_drop_180", "empty_nodes_drop_480",
+ 	"ttp_p999_ms", "ttp_max_ms", "empty_low", "target_keep", "target_displaced_newest", "target_displaced_emptiest", "removable_newest",
++	"resume_p50_ms", "resume_p99_ms", "restores_local", "restores_external", "peak_fill", "empty_drop_1500", "empty_drop_2400",
+ }
+ 
+ func (s *sim) result(seed int) result {
+@@ -1050,6 +1133,18 @@ func (s *sim) result(seed int) result {
+ 		"removable_newest":               float64(m.removableNewest),
+ 		"empty_nodes_drop_180":           math.NaN(),
+ 		"empty_nodes_drop_480":           math.NaN(),
++		"resume_p50_ms":                  pct(m.resumeTime, 0.5),
++		"resume_p99_ms":                  pct(m.resumeTime, 0.99),
++		"restores_local":                 float64(m.restoresLocal),
++		"restores_external":              float64(m.restoresExt),
++		"peak_fill":                      m.peakFill,
++		"empty_drop_1500":                math.NaN(),
++		"empty_drop_2400":                math.NaN(),
++	}
++	for i, k := range []string{"empty_drop_1500", "empty_drop_2400"} {
++		if i < len(m.emptyLate) {
++			row[k] = float64(m.emptyLate[i])
++		}
+ 	}
+ 	if len(m.emptyNodesAtDrop) == 4 {
+ 		row["empty_nodes_drop_180"] = float64(m.emptyNodesAtDrop[2])
+@@ -1095,7 +1190,8 @@ func main() {
+ 			n = *largeSeeds
+ 		}
+ 		for _, pat := range patterns() {
+-			if *onlyPatterns != "" && !slices.Contains(strings.Split(*onlyPatterns, ","), pat.name) {
++			named := slices.Contains(strings.Split(*onlyPatterns, ","), pat.name)
++			if (*onlyPatterns != "" || pat.optIn) && !named {
+ 				continue
+ 			}
+ 			for _, pol := range policies() {
+diff --git a/cmd/ateapi/internal/scheduling/scheduling.go b/cmd/ateapi/internal/scheduling/scheduling.go
+index 2784ba68a..17f00d764 100644
+--- a/cmd/ateapi/internal/scheduling/scheduling.go
++++ b/cmd/ateapi/internal/scheduling/scheduling.go
+@@ -20,9 +20,9 @@ import (
+ 	"context"
+ 	"errors"
+ 	"fmt"
++	"log/slog"
+ 	"math"
+ 	"math/bits"
+-	"log/slog"
+ 	"math/rand"
+ 	"os"
+ 	"slices"
+@@ -115,7 +115,8 @@ type Option func(*scheduler)
+ // compare fragmentation against P2C and is not meant for upstream.
+ type Policy struct {
+ 	// Name is one of p2c (the default), random, mostallocated, bestofd, topk,
+-	// watermark, firstfit, oldestofd or prefix.
++	// watermark, firstfit, oldestofd, or a prefix policy: prefix, prefixsat,
++	// prefixbest or prefixpack.
+ 	Name string
+ 	// K is the sample size for bestofd, and the pool to pick from at random
+ 	// for topk, watermark and firstfit. For prefix it is the least free
+@@ -289,7 +290,8 @@ func (s *scheduler) Schedule(ctx context.Context, constraints Constraints) (*ate
+ // depend on --max-actors. It returns the less loaded of two random workers
+ // with room in that prefix. Workers past the prefix get no new actors, so they
+ // empty as their actors suspend. A LongLived actor goes to one of the two
+-// oldest workers with room instead. EXPERIMENT ONLY.
++// oldest workers with room instead. prefixpack sends an actor pinned to a node
++// (RequiredNodes) to the fullest worker with room there. EXPERIMENT ONLY.
+ func (s *scheduler) schedulePrefix(workers []*ateapi.Worker, constraints Constraints) (*ateapi.Worker, error) {
+ 	type entry struct {
+ 		cand    candidate
+@@ -309,6 +311,20 @@ func (s *scheduler) schedulePrefix(workers []*ateapi.Worker, constraints Constra
+ 		}
+ 		eligible = append(eligible, e)
+ 	}
++	// A pinned actor's window holds only its node's few workers, and picking
++	// the less loaded of two there keeps all of them busy.
++	if s.policy.Name == "prefixpack" && len(constraints.RequiredNodes) > 0 {
++		var best *candidate
++		for i := range eligible {
++			if e := &eligible[i]; e.hasRoom && (best == nil || e.cand.after > best.after) {
++				best = &e.cand
++			}
++		}
++		if best == nil {
++			return nil, ErrNoCapacity
++		}
++		return best.worker, nil
++	}
+ 	slices.SortFunc(eligible, func(a, b entry) int {
+ 		if olderThan(&a.cand, &b.cand) {
+ 			return -1
+@@ -354,9 +370,9 @@ func (s *scheduler) schedulePrefix(workers []*ateapi.Worker, constraints Constra
+ 		a, b = b, a
+ 	}
+ 	// a is the less loaded. prefixbest always takes the fuller one. prefixsat
+-	// takes it only when saturated, where spreading would leave no worker
+-	// with room for a large actor.
+-	if s.policy.Name == "prefixbest" || (s.policy.Name == "prefixsat" && saturated) {
++	// and prefixpack take it only when saturated, where spreading would leave
++	// no worker with room for a large actor.
++	if s.policy.Name == "prefixbest" || ((s.policy.Name == "prefixsat" || s.policy.Name == "prefixpack") && saturated) {
+ 		return b.worker, nil
+ 	}
+ 	return a.worker, nil
+diff --git a/cmd/ateapi/internal/scheduling/scheduling_test.go b/cmd/ateapi/internal/scheduling/scheduling_test.go
+index e3cba527f..5dcf29fe9 100644
+--- a/cmd/ateapi/internal/scheduling/scheduling_test.go
++++ b/cmd/ateapi/internal/scheduling/scheduling_test.go
+@@ -696,6 +696,64 @@ func seqIntn(vals ...int) func(int) int {
+ 	}
+ }
+ 
++func TestSchedulePrefixPack(t *testing.T) {
++	prefixPack := Policy{Name: "prefixpack", K: 1, Watermark: 0.2}
++	nodeA := fleet{
++		worker("w-a-empty", "gvisor", "node-a", nil, withMaxActors(4)),
++		worker("w-a-light", "gvisor", "node-a", nil, withMaxActors(4), assigned("demo", "a1")),
++		worker("w-a-heavy", "gvisor", "node-a", nil, withMaxActors(4),
++			assigned("demo", "a2"), assigned("demo", "a3"), assigned("demo", "a4")),
++		worker("w-a-full", "gvisor", "node-a", nil, withMaxActors(1), assigned("demo", "a5")),
++		worker("w-b-heavy", "gvisor", "node-b", nil, withMaxActors(4),
++			assigned("demo", "b1"), assigned("demo", "b2"), assigned("demo", "b3")),
++	}
++	s := New(nodeA, WithIntn(firstIntn), WithPolicy(prefixPack))
++	got, err := s.Schedule(context.Background(), Constraints{RequiredNodes: []string{"node-a"}})
++	if err != nil {
++		t.Fatalf("Schedule() error = %v", err)
++	}
++	if got.GetWorkerPod() != "w-a-heavy" {
++		t.Errorf("Schedule() = %q, want the fullest worker with room on the pinned node, w-a-heavy", got.GetWorkerPod())
++	}
++}
++
++func TestSchedulePrefixPackUnpinnedMatchesPrefixSat(t *testing.T) {
++	f := fleet{
++		worker("w-0", "gvisor", "node-a", nil, withMaxActors(4)),
++		worker("w-1", "gvisor", "node-a", nil, withMaxActors(4), assigned("demo", "a")),
++		worker("w-2", "gvisor", "node-b", nil, withMaxActors(4), assigned("demo", "b"), assigned("demo", "c")),
++		worker("w-3", "gvisor", "node-b", nil, withMaxActors(4)),
++	}
++	// The window is w-0 and w-1, so these draw each of them first.
++	for _, intn := range [][]int{{0, 0}, {1, 0}} {
++		want, err := New(f, WithIntn(seqIntn(intn...)), WithPolicy(Policy{Name: "prefixsat", K: 1, Watermark: 0.2})).
++			Schedule(context.Background(), Constraints{})
++		if err != nil {
++			t.Fatalf("prefixsat Schedule() with intn %v error = %v", intn, err)
++		}
++		got, err := New(f, WithIntn(seqIntn(intn...)), WithPolicy(Policy{Name: "prefixpack", K: 1, Watermark: 0.2})).
++			Schedule(context.Background(), Constraints{})
++		if err != nil {
++			t.Fatalf("prefixpack Schedule() with intn %v error = %v", intn, err)
++		}
++		if got.GetWorkerPod() != want.GetWorkerPod() {
++			t.Errorf("prefixpack Schedule() with intn %v = %q, want prefixsat's %q", intn, got.GetWorkerPod(), want.GetWorkerPod())
++		}
++	}
++}
++
++func TestSchedulePrefixPackErrors(t *testing.T) {
++	f := fleet{
++		worker("w-a-full", "gvisor", "node-a", nil, withMaxActors(1), assigned("demo", "a1")),
++		worker("w-b-free", "gvisor", "node-b", nil, withMaxActors(4)),
++	}
++	s := New(f, WithIntn(firstIntn), WithPolicy(Policy{Name: "prefixpack", K: 1, Watermark: 0.2}))
++	_, err := s.Schedule(context.Background(), Constraints{RequiredNodes: []string{"node-a"}})
++	if !errors.Is(err, ErrNoCapacity) {
++		t.Errorf("Schedule() pinned to a full node error = %v, want ErrNoCapacity", err)
++	}
++}
++
+ func TestSchedulePowerOfTwoChoicesShiftedSecondSample(t *testing.T) {
+ 	// intn yields i=0, then j=1; since j >= i the second sample shifts to
+ 	// candidates[2], the only lighter worker. An off-by-one in the shift would
+diff --git a/cmd/objectstore-plugin/README.md b/cmd/objectstore-plugin/README.md
+index e5a72d7a5..3cef48c5e 100644
+--- a/cmd/objectstore-plugin/README.md
++++ b/cmd/objectstore-plugin/README.md
+@@ -17,8 +17,11 @@ created from. The exchange is private to this plugin, defined in
+ 
+ On the node side, `node` mode on GCS dials that exchange, at
+ `--exchange-address` through the ate-api-server Service, verified with
+-`--exchange-ca-file` and `--exchange-server-name`. Each `FetchSnapshot` or
+-`UploadSnapshot` runs on a storage client built with the actor's token. The
++`--exchange-ca-file` and `--exchange-server-name`. The default address is a
++`k8s:///` target, resolved from the Service's EndpointSlices with the pod's
++service account, so the plugin follows ate-api-server rollouts at once. Each
++`FetchSnapshot` or `UploadSnapshot` runs on a storage client built with the
++actor's token. The
+ token and the client are cached under the JWT they were obtained for, never
+ under a claim read out of it, while at least twenty minutes remain, so the
+ transfers that follow one another for an actor share connections. A client
+diff --git a/cmd/objectstore-plugin/main.go b/cmd/objectstore-plugin/main.go
+index 4a2d7ae15..28684d5d2 100644
+--- a/cmd/objectstore-plugin/main.go
++++ b/cmd/objectstore-plugin/main.go
+@@ -29,6 +29,7 @@ import (
+ 	"os"
+ 	"os/signal"
+ 	"strconv"
++	"strings"
+ 	"syscall"
+ 	"time"
+ 
+@@ -36,6 +37,7 @@ import (
+ 	"github.com/spf13/pflag"
+ 	objectstorev1 "go.ate.dev/substrate/api/objectstore/v1"
+ 	"go.ate.dev/substrate/internal/installdefaults"
++	"go.ate.dev/substrate/internal/k8sresolver"
+ 	"go.ate.dev/substrate/internal/nodepath"
+ 	"go.ate.dev/substrate/internal/objectstore"
+ 	"go.ate.dev/substrate/internal/objectstoreplugin"
+@@ -50,6 +52,8 @@ import (
+ 	"google.golang.org/grpc/health"
+ 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+ 	"k8s.io/apimachinery/pkg/api/resource"
++	"k8s.io/client-go/kubernetes"
++	"k8s.io/client-go/rest"
+ )
+ 
+ const usage = `usage: objectstore-plugin <node|control|healthcheck> [flags]`
+@@ -73,7 +77,7 @@ func main() {
+ 	timeout := flags.Duration("timeout", 5*time.Second, "healthcheck mode: how long to wait for the plugin to report that it is serving")
+ 	apiHost := installdefaults.APIServiceHost(installdefaults.NamespaceFromPodEnv())
+ 	var ncfg exchangeclient.Config
+-	flags.StringVar(&ncfg.Address, "exchange-address", net.JoinHostPort(apiHost, strconv.Itoa(exchange.DefaultPort)), "node mode on GCS: address of the credential exchange the control sidecar serves, where each transfer's actor JWT is traded for a token scoped to the actor")
++	flags.StringVar(&ncfg.Address, "exchange-address", k8sresolver.Scheme+":///"+net.JoinHostPort(apiHost, strconv.Itoa(exchange.DefaultPort)), "node mode on GCS: address of the credential exchange the control sidecar serves, where each transfer's actor JWT is traded for a token scoped to the actor. A k8s:/// target resolves through the Service's EndpointSlices")
+ 	flags.StringVar(&ncfg.CAFile, "exchange-ca-file", serviceDNSTrustBundle, "node mode on GCS: CA bundle used to verify the exchange")
+ 	flags.StringVar(&ncfg.ServerName, "exchange-server-name", apiHost, "node mode on GCS: DNS name expected on the exchange's certificate, the API Service in the pod's namespace")
+ 	var xcfg exchangeConfig
+@@ -133,6 +137,18 @@ func main() {
+ 		// exchange. S3 has no per-actor credential and keeps the pod's own.
+ 		var nodeOpts []objectstoreplugin.NodeOption
+ 		if !objectstorage.UsesS3() {
++			// The API Service is headless. gRPC's DNS resolver keeps the IPs
++			// of replaced ate-api-server pods, and the first exchange after
++			// a rollout waits out its 20s connect timeout before it
++			// re-resolves. EndpointSlices track the pods as atelet's own
++			// ateapi client does.
++			if strings.HasPrefix(ncfg.Address, k8sresolver.Scheme+":") {
++				k8sClient, err := newKubeClient()
++				if err != nil {
++					serverboot.Fatal(ctx, "Failed to set up the Kubernetes client for the exchange address", err)
++				}
++				ncfg.Resolver = k8sresolver.NewBuilder(k8sClient)
++			}
+ 			creds, err := exchangeclient.New(ncfg)
+ 			if err != nil {
+ 				serverboot.Fatal(ctx, "Failed to set up the credential exchange client", err)
+@@ -260,3 +276,13 @@ func parseCapacity(s string) (int64, error) {
+ 	}
+ 	return n, nil
+ }
++
++// newKubeClient builds a client from the pod's service account, which the
++// node sidecar shares with atelet.
++func newKubeClient() (kubernetes.Interface, error) {
++	config, err := rest.InClusterConfig()
++	if err != nil {
++		return nil, fmt.Errorf("while loading the in-cluster config: %w", err)
++	}
++	return kubernetes.NewForConfig(config)
++}
+diff --git a/internal/objectstoreplugin/exchangeclient/exchangeclient.go b/internal/objectstoreplugin/exchangeclient/exchangeclient.go
+index abf7999c9..668830cd3 100644
+--- a/internal/objectstoreplugin/exchangeclient/exchangeclient.go
++++ b/internal/objectstoreplugin/exchangeclient/exchangeclient.go
+@@ -34,6 +34,7 @@ import (
+ 	"google.golang.org/grpc"
+ 	"google.golang.org/grpc/codes"
+ 	"google.golang.org/grpc/credentials"
++	"google.golang.org/grpc/resolver"
+ 	"google.golang.org/grpc/status"
+ 	"google.golang.org/protobuf/types/known/timestamppb"
+ 	"k8s.io/utils/lru"
+@@ -57,6 +58,10 @@ type Config struct {
+ 	CAFile string
+ 	// ServerName is the DNS name expected on that certificate.
+ 	ServerName string
++	// Resolver, when set, resolves an Address in its scheme, as
++	// k8sresolver does for a k8s:/// target. Nil uses gRPC's registered
++	// resolvers.
++	Resolver resolver.Builder
+ }
+ 
+ // Source implements objectstoreplugin.Credentials for GCS.
+@@ -90,7 +95,11 @@ func New(cfg Config) (*Source, error) {
+ 		return nil, fmt.Errorf("exchangeclient: while loading the exchange CA bundle: %w", err)
+ 	}
+ 	creds := credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS13, RootCAs: pool, ServerName: cfg.ServerName})
+-	conn, err := grpc.NewClient(cfg.Address, grpc.WithTransportCredentials(creds), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
++	opts := []grpc.DialOption{grpc.WithTransportCredentials(creds), grpc.WithStatsHandler(otelgrpc.NewClientHandler())}
++	if cfg.Resolver != nil {
++		opts = append(opts, grpc.WithResolvers(cfg.Resolver))
++	}
++	conn, err := grpc.NewClient(cfg.Address, opts...)
+ 	if err != nil {
+ 		return nil, fmt.Errorf("exchangeclient: while creating the exchange client: %w", err)
+ 	}
+diff --git a/internal/objectstoreplugin/exchangeclient/exchangeclient_test.go b/internal/objectstoreplugin/exchangeclient/exchangeclient_test.go
+index 56e54c731..f3c38c1bd 100644
+--- a/internal/objectstoreplugin/exchangeclient/exchangeclient_test.go
++++ b/internal/objectstoreplugin/exchangeclient/exchangeclient_test.go
+@@ -18,18 +18,23 @@ import (
+ 	"context"
+ 	"errors"
+ 	"io"
++	"net"
++	"os"
+ 	"path/filepath"
+ 	"testing"
+ 	"time"
+ 
+ 	"google.golang.org/grpc"
+ 	"google.golang.org/grpc/codes"
++	"google.golang.org/grpc/resolver"
++	"google.golang.org/grpc/resolver/manual"
+ 	"google.golang.org/grpc/status"
+ 	"google.golang.org/protobuf/types/known/timestamppb"
+ 	"k8s.io/utils/lru"
+ 
+ 	"go.ate.dev/substrate/internal/objectstoreplugin/credential"
+ 	exchangepb "go.ate.dev/substrate/internal/proto/objectstoreexchangepb"
++	"go.ate.dev/substrate/internal/testcert"
+ 	"go.ate.dev/substrate/pkg/objectstorage"
+ )
+ 
+@@ -251,4 +256,35 @@ func TestNew_ChecksItsConfig(t *testing.T) {
+ 	}
+ }
+ 
++func TestNew_ResolvesTheAddressWithTheConfiguredResolver(t *testing.T) {
++	caFile := filepath.Join(t.TempDir(), "ca.pem")
++	if err := os.WriteFile(caFile, testcert.NewServerTLS(t, net.ParseIP("127.0.0.1")).RootCA, 0o600); err != nil {
++		t.Fatal(err)
++	}
++	built := make(chan resolver.Target, 1)
++	r := manual.NewBuilderWithScheme("k8s")
++	r.BuildCallback = func(target resolver.Target, _ resolver.ClientConn, _ resolver.BuildOptions) { built <- target }
++	s, err := New(Config{Address: "k8s:///api.ate-system.svc:8445", CAFile: caFile, ServerName: "api.ate-system.svc", Resolver: r})
++	if err != nil {
++		t.Fatalf("New() error = %v", err)
++	}
++	defer s.Close()
++
++	// The resolver is built when the first call leaves idle. The call itself
++	// fails: the manual resolver never reports an address.
++	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
++	defer cancel()
++	if _, err := s.Client(ctx, "jwt", false); err == nil {
++		t.Fatal("Client() with no exchange address succeeded")
++	}
++	select {
++	case target := <-built:
++		if got, want := target.Endpoint(), "api.ate-system.svc:8445"; got != want {
++			t.Errorf("resolver built for %q, want %q", got, want)
++		}
++	default:
++		t.Error("the configured resolver was never built")
++	}
++}
++
+ var _ io.Closer = (*Source)(nil)
+diff --git a/cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh b/cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+new file mode 100755
+index 000000000..05bf1cb8b
+--- /dev/null
++++ b/cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+@@ -0,0 +1,108 @@
++#!/usr/bin/env bash
++# Copyright 2026 The Agent Substrate Authors
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++# EXPERIMENT ONLY. Creates the WorkerPool, the sched-250m actor template and
++# the actor population for one scenario, on the cluster of the current kubectl
++# context.
++#
++# usage: gke-setup.sh SCENARIO ATESPACE REPLICAS WORKER_CPU WORKER_MEMORY [FAKE_MAX_ACTORS]
++#   fake data plane:  gke-setup.sh f-kind200 cell-1 200 4 8Gi 16
++#   real data plane:  gke-setup.sh g-gke8 cell-1 24 2 4Gi
++
++set -o errexit -o nounset -o pipefail
++
++scenario="$1" atespace="$2" replicas="$3" cpu="$4" memory="$5" fake_max="${6:-}"
++: "${KO_DOCKER_REPO:?set KO_DOCKER_REPO}"
++NS=benchmark-workloads
++BIN="${BIN:-bin/schedsim}"
++KUBECTL_ATE="${KUBECTL_ATE:-bin/kubectl-ate}"
++KUBECONFIG_PATH="${KUBECONFIG:-${HOME}/.kube/config}"
++
++echo "target context: $(kubectl config current-context)"
++go build -o "${KUBECTL_ATE}" ./cmd/kubectl-ate
++go build -o "${BIN}" ./cmd/ateapi/internal/scheduling/schedsim
++
++annotations=""
++if [[ -n "${fake_max}" ]]; then
++  annotations="  annotations:
++    ate.dev/fake-max-actors: \"${fake_max}\""
++fi
++
++kubectl create namespace "${NS}" --dry-run=client -o yaml | kubectl apply -f -
++
++# A pool's capacity is read when its Workers are made, so recreate the pool
++# instead of patching it.
++if kubectl get workerpool pool -n "${NS}" >/dev/null 2>&1; then
++  kubectl delete workerpool pool -n "${NS}" --wait=true --timeout=600s
++fi
++cat <<YAML | hack/run-tool.sh ko apply -f -
++apiVersion: ate.dev/v1
++kind: WorkerPool
++metadata:
++  name: pool
++  namespace: ${NS}
++  labels:
++    workload: benchmark-worker
++${annotations}
++spec:
++  replicas: ${replicas}
++  sandboxClasses:
++  - name: gvisor
++  workerImage: ko://go.ate.dev/substrate/cmd/ateworker-gvisor
++  template:
++    labels:
++      workload: benchmark-worker
++    resources: {requests: {cpu: "${cpu}", memory: "${memory}"}, limits: {cpu: "${cpu}", memory: "${memory}"}}
++YAML
++kubectl wait --for=jsonpath='{.status.readyReplicas}'="${replicas}" workerpool/pool -n "${NS}" --timeout=900s
++
++"${KUBECTL_ATE}" create atespace "${NS}" >/dev/null 2>&1 || true
++if ! "${KUBECTL_ATE}" get actor-template sched-250m -a "${NS}" >/dev/null 2>&1; then
++  cat <<YAML | hack/run-tool.sh ko resolve -f - | "${KUBECTL_ATE}" create actor-template -f -
++metadata:
++  atespace: ${NS}
++  name: sched-250m
++workerSelector:
++  matchLabels:
++    workload: benchmark-worker
++containers:
++- name: glutton
++  image: ko://go.ate.dev/substrate/cmd/benchmarking/glutton
++  # As in benchmarking/workloads/manifests/glutton-template.yaml.tmpl:
++  # glutton exits without --data-dir, and the wakeup probe holds ResumeActor
++  # until the actor answers.
++  command: ["/ko-app/glutton", "--grpc-listen-addr=:80", "--data-dir=/var/lib/glutton", "--mode=http"]
++  wakeupProbe:
++    httpGet:
++      path: /readyz
++      port: 80
++resources:
++  limits:
++    cpuMillicores: "250"
++    memoryBytes: "536870912"
++snapshotConfig:
++  preferredFidelity: SNAPSHOT_FIDELITY_MEMORY
++YAML
++fi
++tag=""
++for _ in $(seq 60); do
++  tag="$("${KUBECTL_ATE}" get actor-template sched-250m -a "${NS}" -o json | jq -r '.status.goldenSnapshotStatus.goldenTag.name // empty')"
++  [[ -n "${tag}" ]] && break
++  sleep 5
++done
++[[ -n "${tag}" ]] || { echo "template sched-250m has no golden snapshot" >&2; exit 1; }
++
++"${BIN}" -kind -setup -kubeconfig "${KUBECONFIG_PATH}" -scenario "${scenario}" -atespace "${atespace}"
++echo "setup done: scenario ${scenario}, atespace ${atespace}"
+diff --git a/cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh b/cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+new file mode 100755
+index 000000000..fb16aeace
+--- /dev/null
++++ b/cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+@@ -0,0 +1,106 @@
++#!/usr/bin/env bash
++# Copyright 2026 The Agent Substrate Authors
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++# EXPERIMENT ONLY. Runs one cell on the cluster of the current kubectl
++# context: sets the policy on ate-api-server, follows its logs for the whole
++# run so log rotation cannot drop retry, detach or crash lines, drives the
++# pattern, and appends to OUT/retries.csv.
++#
++# usage: gke-run-cell.sh SCENARIO ATESPACE PATTERN POLICY SEED
++#   gke-run-cell.sh g-gke8 cell-1 ramp-down prefixsat:1:0.2 1
++
++set -o errexit -o nounset -o pipefail
++
++scenario="$1" atespace="$2" pattern="$3" policy="$4" seed="$5"
++OUT="${OUT:-cmd/ateapi/internal/scheduling/schedsim/gke-results/phase-b}"
++BIN="${BIN:-bin/schedsim}"
++KUBECONFIG_PATH="${KUBECONFIG:-${HOME}/.kube/config}"
++mkdir -p "${OUT}"
++
++echo "target context: $(kubectl config current-context)"
++current="$(kubectl get deploy ate-api-server -n ate-system \
++  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ATE_API_SCHEDULING_POLICY")].value}')"
++changed=no
++if [[ "${current}" != "${policy}" ]]; then
++  kubectl set env deploy/ate-api-server -n ate-system -c ate-api-server "ATE_API_SCHEDULING_POLICY=${policy}"
++  changed=yes
++fi
++kubectl rollout status deploy/ate-api-server -n ate-system --timeout=300s
++
++# Old pods linger while they shut down. Wait so nothing dials or follows them.
++want="$(kubectl get deploy ate-api-server -n ate-system -o jsonpath='{.spec.replicas}')"
++until [[ "$(kubectl get pods -n ate-system -l app=ate-api-server --no-headers | wc -l | tr -d ' ')" == "${want}" ]]; do
++  sleep 2
++done
++sleep 3
++
++# objectstore-plugin's exchange client keeps a channel to the headless
++# svc/api. After the rollout it holds the old pods' IPs, and the first snapshot
++# transfer on each node waits out grpc-go's 20s minConnectTimeout before it
++# re-resolves. Restart atelet, which carries the plugin, so no cell pays that.
++if [[ "${changed}" == "yes" ]]; then
++  kubectl rollout restart ds/atelet -n ate-system
++  kubectl rollout status ds/atelet -n ate-system --timeout=900s
++  pool_want="$(kubectl get workerpool pool -n benchmark-workloads -o jsonpath='{.spec.replicas}')"
++  kubectl wait --for=jsonpath='{.status.readyReplicas}'="${pool_want}" workerpool/pool -n benchmark-workloads --timeout=600s
++fi
++
++# After a change every new pod must have logged the policy at startup. An
++# unchanged pod is not checked: its startup lines may have rotated away.
++if [[ "${changed}" == "yes" ]]; then
++  for pod in $(kubectl get pods -n ate-system -l app=ate-api-server -o name); do
++    line="$(kubectl logs -n ate-system "${pod}" -c ate-api-server --tail=-1 | grep '"msg":"scheduling policy"' || true)"
++    [[ -n "${line}" ]] || { echo "${pod} did not log its scheduling policy" >&2; exit 1; }
++    echo "${line}"
++  done
++fi
++
++tag="${pattern}_${policy//:/-}_${seed}_${atespace}"
++pids=()
++for pod in $(kubectl get pods -n ate-system -l app=ate-api-server -o name); do
++  kubectl logs -f -n ate-system "${pod}" -c ate-api-server --since=1s \
++    > >(grep --line-buffered -e 'schedexp assignment retry' -e 'Detached actor from its full node' -e '"Actor crashed"' \
++      >>"${OUT}/events_${tag}_${pod##*/}.log") 2>/dev/null &
++  pids+=("$!")
++done
++
++restarts() {
++  kubectl get pods -n ate-system -o jsonpath='{range .items[*]}{range .status.containerStatuses[*]}{.restartCount}{"\n"}{end}{end}' \
++    | awk '{n += $1} END {print n + 0}'
++}
++restarts_before="$(restarts)"
++t_start="$(date +%s)"
++
++"${BIN}" -kind -kubeconfig "${KUBECONFIG_PATH}" -scenario "${scenario}" -pattern "${pattern}" \
++  -policy "${policy}" -atespace "${atespace}" -seed "${seed}" -out "${OUT}" 2>&1 | tee -a "${OUT}/driver.log"
++
++t_end="$(date +%s)"
++# A follower that ended early means the counts are short.
++stream_ok=yes
++for p in "${pids[@]}"; do
++  if ! kill -0 "${p}" 2>/dev/null; then
++    stream_ok=no
++  fi
++  kill "${p}" 2>/dev/null || true
++done
++sleep 1
++restarted=$(( $(restarts) - restarts_before ))
++
++count() { cat "${OUT}"/events_"${tag}"_*.log 2>/dev/null | grep -c -e "$1" || true; }
++if [[ ! -f "${OUT}/retries.csv" ]]; then
++  echo "scenario,pattern,policy,seed,atespace,filled_up,version_conflict,detaches,crashes_log,stream_ok,ate_system_restarts,t_start,t_end" >"${OUT}/retries.csv"
++fi
++echo "${scenario},${pattern},${policy},${seed},${atespace},$(count '"reason":"filled_up"'),$(count '"reason":"version_conflict"'),$(count 'Detached actor from its full node'),$(count '"Actor crashed"'),${stream_ok},${restarted},${t_start},${t_end}" >>"${OUT}/retries.csv"
++tail -1 "${OUT}/retries.csv"
+diff --git a/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/phase-b.sh b/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/phase-b.sh
+new file mode 100755
+index 000000000..9bacd0574
+--- /dev/null
++++ b/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/phase-b.sh
+@@ -0,0 +1,64 @@
++#!/usr/bin/env bash
++# Phase B orchestrator: two shuffled passes over ramp-down/burst x 3 policies.
++# Each run gets a fresh WorkerPool and a fresh atespace population.
++# usage: [SCENARIO=g-gke8] [PREFIX=cell] [OUT=dir] phase-b.sh [START_INDEX]
++set -o nounset -o pipefail
++
++G="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++REPO="$(git -C "${G}" rev-parse --show-toplevel)"
++SCENARIO="${SCENARIO:-g-gke8}"
++PREFIX="${PREFIX:-cell}"
++export OUT="${OUT:-${G}/phase-b}"
++mkdir -p "${OUT}"
++cd "${REPO}"
++# shellcheck disable=SC1091
++source /usr/local/google/home/luizaoj/go/src/substrate-gke/.ate-dev-env.sh
++# Pin every kubectl, kubectl-ate and driver call to sched-exp, so a context
++# switch elsewhere cannot redirect a cell to another cluster.
++export KUBECONFIG="${G}/kubeconfig-sched-exp"
++[[ "$(kubectl config current-context)" == "${KUBECTL_CONTEXT}" ]] || { echo "kubeconfig is not ${KUBECTL_CONTEXT}" >&2; exit 1; }
++
++start="${1:-1}"
++# CELLS_FILE lists "idx pattern policy seed" lines to run instead of the two passes.
++# Fixed shuffle so a restart resumes the same order.
++if [[ -n "${CELLS_FILE:-}" ]]; then
++  mapfile -t cells <"${CELLS_FILE}"
++else
++mapfile -t cells < <(python3 - <<'EOF'
++import itertools, random
++combos = list(itertools.product(["ramp-down", "burst"], ["p2c", "bestofd:3", "prefixsat:1:0.2"]))
++out = []
++for seed in (1, 2):
++    c = combos[:]
++    random.Random(100 + seed).shuffle(c)
++    out += [f"{p} {pol} {seed}" for p, pol in c]
++for i, x in enumerate(out, 1):
++    print(f"{i:02d} {x}")
++EOF
++)
++fi
++printf '%s\n' "${cells[@]}" >> "${OUT}/order.txt"
++
++for line in "${cells[@]}"; do
++  read -r idx pattern policy seed <<<"${line}"
++  (( 10#${idx} < start )) && continue
++  atespace="${PREFIX}-${idx}"
++  echo "=== $(date -Is) ${SCENARIO} cell ${idx}: ${pattern} ${policy} seed ${seed} atespace ${atespace}" | tee -a "${OUT}/phase-b.log"
++  if ! cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh "${SCENARIO}" "${atespace}" 24 2 4160Mi 2>&1 \
++      | grep -v -e "pushed blob" -e "existing blob" -e "existing manifest" -e "token-file" >>"${OUT}/setup.log"; then
++    echo "setup failed for cell ${idx}" | tee -a "${OUT}/phase-b.log"
++    continue
++  fi
++  if ! cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh "${SCENARIO}" "${atespace}" "${pattern}" "${policy}" "${seed}" 2>&1 \
++      | grep -v "token-file" >>"${OUT}/cells.log"; then
++    echo "run failed for cell ${idx}" | tee -a "${OUT}/phase-b.log"
++  fi
++  tail -1 "${OUT}/retries.csv" | tee -a "${OUT}/phase-b.log"
++  tail -1 "${OUT}/runs.csv" | tee -a "${OUT}/phase-b.log"
++  kubectl port-forward -n benchmarking svc/prometheus 19090:9090 >/dev/null 2>&1 &
++  pf=$!
++  for _ in $(seq 30); do curl -sf localhost:19090/-/ready >/dev/null && break; sleep 1; done
++  python3 "${G}/tools/collect_metrics.py" "${OUT}" >>"${OUT}/phase-b.log" 2>&1 || echo "metrics failed for cell ${idx}" | tee -a "${OUT}/phase-b.log"
++  kill "${pf}" 2>/dev/null || true
++done
++echo "=== $(date -Is) phase B done" | tee -a "${OUT}/phase-b.log"
+diff --git a/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/collect_metrics.py b/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/collect_metrics.py
+new file mode 100644
+index 000000000..7e3ba3d5d
+--- /dev/null
++++ b/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/collect_metrics.py
+@@ -0,0 +1,103 @@
++#!/usr/bin/env python3
++"""Collects per-cell server metrics from the in-cluster Prometheus.
++
++For each row of OUT/retries.csv it evaluates instant queries at t_end over the
++window [t_start, t_end] and appends one row per cell to OUT/metrics.csv.
++
++usage: collect_metrics.py OUT_DIR [PROM_URL]
++"""
++import csv
++import json
++import math
++import os
++import sys
++import urllib.parse
++import urllib.request
++
++out = sys.argv[1]
++prom = sys.argv[2] if len(sys.argv) > 2 else "http://localhost:19090"
++
++
++def q(expr, t):
++    url = f"{prom}/api/v1/query?" + urllib.parse.urlencode({"query": expr, "time": t})
++    with urllib.request.urlopen(url, timeout=30) as r:
++        res = json.load(r)
++    if res.get("status") != "success":
++        raise RuntimeError(f"{expr}: {res}")
++    v = res["data"]["result"]
++    if not v:
++        return float("nan")
++    return float(v[0]["value"][1])
++
++
++def delta(sel, t0, t1, by="le"):
++    """sum by(by)(sel) at t1 minus at t0, treating series born in the window as 0 at t0."""
++    return (f"(sum by ({by}) ({sel}) - (sum by ({by}) ({sel} @ {t0}) "
++            f"or sum by ({by}) ({sel}) * 0))")
++
++
++def hq(phi, sel, t0, t1):
++    return q(f"histogram_quantile({phi}, {delta(sel, t0, t1)})", t1)
++
++
++def count(sel, t0, t1):
++    return q(f"sum({sel}) - (sum({sel} @ {t0}) or vector(0))", t1)
++
++
++def psi_max(sel, t0, t1, by):
++    w = int(t1) - int(t0)
++    return q(f"max(max_over_time((max by ({by}) (rate({sel}[1m])))[{w}s:15s])) * 100", t1)
++
++
++def psi_mean(sel, t0, t1, by):
++    w = int(t1) - int(t0)
++    return q(f"avg(avg_over_time((sum by ({by}) (rate({sel}[1m])))[{w}s:15s])) * 100", t1)
++
++
++bind = 'ate_scheduler_assignment_duration_seconds_bucket{ate_scheduler_outcome="assigned"}'
++restore = 'ate_actor_restore_duration_seconds_bucket{ate_snapshot_phase="total"}'
++restore_local = 'ate_actor_restore_duration_seconds_bucket{ate_snapshot_phase="total",ate_snapshot_kind="local"}'
++restore_latest = 'ate_actor_restore_duration_seconds_bucket{ate_snapshot_phase="total",ate_snapshot_kind="latest"}'
++crashes = "ate_actor_crashes_total"
++restores_n = 'ate_actor_restore_duration_seconds_count{ate_snapshot_phase="total"}'
++node_psi = 'container_pressure_cpu_waiting_seconds_total{container="node",kubernetes_io_hostname=~".*substrate-node-pool.*"}'
++pod_psi = ('container_pressure_cpu_waiting_seconds_total{namespace="benchmark-workloads",container="",'
++           'pod=~"pool-.*"}')
++
++cols = ["scenario", "pattern", "policy", "seed", "atespace", "t_start", "t_end",
++        "bind_p50_ms", "bind_p99_ms", "restore_p50_ms", "restore_p99_ms",
++        "restore_local_p99_ms", "restore_latest_p99_ms", "restores",
++        "crashes_metric", "node_psi_cpu_max_pct", "node_psi_cpu_mean_pct", "pod_psi_cpu_max_pct"]
++
++done = set()
++mpath = os.path.join(out, "metrics.csv")
++if os.path.exists(mpath):
++    with open(mpath) as f:
++        for r in csv.DictReader(f):
++            done.add((r["atespace"], r["t_start"]))
++
++with open(os.path.join(out, "retries.csv")) as f:
++    rows = list(csv.DictReader(f))
++
++new = not os.path.exists(mpath)
++with open(mpath, "a", newline="") as f:
++    w = csv.writer(f)
++    if new:
++        w.writerow(cols)
++    for r in rows:
++        if (r["atespace"], r["t_start"]) in done:
++            continue
++        t0, t1 = r["t_start"], r["t_end"]
++        if math.isnan(count(restores_n, t0, t1)):
++            raise RuntimeError(f"no restore samples for {r['atespace']}; is Prometheus reachable?")
++        ms = lambda x: round(x * 1000, 2)
++        rec = [r["scenario"], r["pattern"], r["policy"], r["seed"], r["atespace"], t0, t1,
++               ms(hq(0.5, bind, t0, t1)), ms(hq(0.99, bind, t0, t1)),
++               ms(hq(0.5, restore, t0, t1)), ms(hq(0.99, restore, t0, t1)),
++               ms(hq(0.99, restore_local, t0, t1)), ms(hq(0.99, restore_latest, t0, t1)),
++               count(restores_n, t0, t1), count(crashes, t0, t1),
++               round(psi_max(node_psi, t0, t1, "kubernetes_io_hostname"), 2),
++               round(psi_mean(node_psi, t0, t1, "kubernetes_io_hostname"), 2),
++               round(psi_max(pod_psi, t0, t1, "pod"), 2)]
++        w.writerow(rec)
++        print(dict(zip(cols, rec)))
+diff --git a/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/summarize.py b/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/summarize.py
+new file mode 100644
+index 000000000..4cfdd013d
+--- /dev/null
++++ b/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/summarize.py
+@@ -0,0 +1,83 @@
++#!/usr/bin/env python3
++"""Joins retries.csv, runs.csv and metrics.csv per run and prints a per-cell table.
++
++usage: summarize.py OUT_DIR
++"""
++import csv
++import math
++import os
++import statistics
++import sys
++from collections import defaultdict
++
++out = sys.argv[1]
++
++
++def load(name):
++    p = os.path.join(out, name)
++    return list(csv.DictReader(open(p))) if os.path.exists(p) else []
++
++
++key = lambda r: (r["pattern"], r["policy"], r["seed"])
++runs = {key(r): r for r in load("runs.csv")}
++mets = {key(r): r for r in load("metrics.csv")}
++# Runs whose log stream ended early but whose counts were re-read from Cloud
++# Logging over the same window and matched.
++verified = {r["atespace"] for r in load("stream_verified.csv")}
++rows = []
++for r in load("retries.csv"):
++    k = key(r)
++    if r["pattern"] == "smoke" or k not in runs:
++        continue
++    ru, me = runs[k], mets.get(k, {})
++    f = lambda d, c: float(d.get(c, "nan") or "nan")
++    resumes = f(ru, "resumes")
++    crashes_m = f(me, "crashes_metric")
++    valid = (f(ru, "other_errors") == 0 and (r["stream_ok"] == "yes" or r["atespace"] in verified) and r["ate_system_restarts"] == "0")
++    rows.append({
++        "pattern": r["pattern"], "policy": r["policy"], "seed": r["seed"], "atespace": r["atespace"],
++        "valid": valid, "resumes": resumes, "unplaced": resumes - f(ru, "placed"),
++        "retries_per_resume": int(r["filled_up"]) / resumes if resumes else math.nan,
++        "filled_up": int(r["filled_up"]), "version_conflict": int(r["version_conflict"]),
++        "detaches": int(r["detaches"]), "crashes_log": int(r["crashes_log"]),
++        "crashes_metric": 0.0 if math.isnan(crashes_m) else crashes_m,
++        "ttp_p50": f(ru, "ttp_p50_ms"), "ttp_p99": f(ru, "ttp_p99_ms"),
++        "bind_p99": f(me, "bind_p99_ms"), "restore_p50": f(me, "restore_p50_ms"),
++        "restore_p99": f(me, "restore_p99_ms"),
++        "empty60": f(ru, "empty_drop_60"), "empty180": f(ru, "empty_drop_180"), "empty480": f(ru, "empty_drop_480"),
++        "psi_max": f(me, "node_psi_cpu_max_pct"), "psi_mean": f(me, "node_psi_cpu_mean_pct"),
++    })
++
++cols = ["pattern", "policy", "seed", "valid", "resumes", "unplaced", "retries_per_resume", "detaches",
++        "crashes_log", "crashes_metric", "ttp_p50", "ttp_p99", "bind_p99", "restore_p50", "restore_p99",
++        "empty60", "empty180", "empty480", "psi_max", "psi_mean"]
++
++
++def fmt(v):
++    if isinstance(v, bool):
++        return "yes" if v else "NO"
++    if isinstance(v, float):
++        if math.isnan(v):
++            return "-"
++        return f"{v:.4f}" if abs(v) < 1 and v != 0 else f"{v:.1f}" if v % 1 else f"{int(v)}"
++    return str(v)
++
++
++print("\t".join(cols))
++for r in sorted(rows, key=lambda r: (r["pattern"], r["policy"], r["seed"])):
++    print("\t".join(fmt(r[c]) for c in cols))
++
++print("\nmedians over valid runs (values per run in parens)")
++g = defaultdict(list)
++for r in rows:
++    if r["valid"]:
++        g[(r["pattern"], r["policy"])].append(r)
++for (p, pol), rs in sorted(g.items()):
++    def m(c):
++        vals = [r[c] for r in rs if not math.isnan(r[c])]
++        if not vals:
++            return "-"
++        return f"{fmt(float(statistics.median(vals)))} ({', '.join(fmt(float(v)) for v in vals)})"
++    print(f"{p:10s} {pol:16s} n={len(rs)} retries/resume={m('retries_per_resume')} ttp_p50={m('ttp_p50')} "
++          f"ttp_p99={m('ttp_p99')} bind_p99={m('bind_p99')} restore_p99={m('restore_p99')} "
++          f"crashes={m('crashes_metric')} detaches={m('detaches')} empty480={m('empty480')} psi_max={m('psi_max')}")
+diff --git a/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/report_tables.py b/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/report_tables.py
+new file mode 100644
+index 000000000..f2e1b6c83
+--- /dev/null
++++ b/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/report_tables.py
+@@ -0,0 +1,112 @@
++#!/usr/bin/env python3
++"""Prints the results-gke.md pattern tables from the phase-b and phase-b-70 CSVs.
++
++Each cell shows the median of its valid runs, then every valid run in parens.
++usage: report_tables.py
++"""
++import csv
++import math
++import os
++import statistics
++from collections import defaultdict
++
++G = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++TOPOS = [("g-gke8", "phase-b", "~90% peak"), ("g-gke8-70", "phase-b-70", "~70% peak")]
++POLICIES = [("p2c", "p2c"), ("bestofd:3", "bestofd-3"), ("prefixsat:1:0.2", "prefixsat")]
++
++
++def load(d, name):
++    p = os.path.join(G, d, name)
++    return list(csv.DictReader(open(p))) if os.path.exists(p) else []
++
++
++def rows_for(d):
++    key = lambda r: (r["pattern"], r["policy"], r["seed"])
++    runs = {key(r): r for r in load(d, "runs.csv")}
++    mets = {key(r): r for r in load(d, "metrics.csv")}
++    verified = {r["atespace"] for r in load(d, "stream_verified.csv")}
++    out = []
++    for r in load(d, "retries.csv"):
++        k = key(r)
++        if r["pattern"] == "smoke" or k not in runs:
++            continue
++        ru, me = runs[k], mets.get(k, {})
++        f = lambda dd, c: float(dd.get(c, "nan") or "nan")
++        valid = (f(ru, "other_errors") == 0 and r["ate_system_restarts"] == "0"
++                 and (r["stream_ok"] == "yes" or r["atespace"] in verified))
++        res = f(ru, "resumes")
++        cm = f(me, "crashes_metric")
++        out.append(dict(pattern=r["pattern"], policy=r["policy"], seed=r["seed"], valid=valid,
++                        atespace=r["atespace"],
++                        unplaced=res - f(ru, "placed"), rpr=int(r["filled_up"]) / res,
++                        det=float(r["detaches"]), crash=max(float(r["crashes_log"]), 0 if math.isnan(cm) else cm),
++                        bind=f(me, "bind_p99_ms"), p50=f(ru, "ttp_p50_ms"), p99=f(ru, "ttp_p99_ms"),
++                        rest=f(me, "restore_p99_ms"), e480=f(ru, "empty_drop_480"),
++                        psi=f(me, "node_psi_cpu_max_pct")))
++    return out
++
++
++def ms(v):
++    return f"{v/1000:.1f}s" if v >= 10000 else f"{v:.0f}"
++
++
++def cell(vals, kind):
++    if not vals:
++        return "not measured"
++    m = statistics.median(vals)
++    if kind == "rpr":
++        return f"{m:.4f} ({', '.join(f'{v:.4f}' for v in vals)})"
++    if kind == "ms":
++        return f"{ms(m)}ms ({', '.join(ms(v) for v in vals)})"
++    return f"{m:g} ({', '.join(f'{v:g}' for v in vals)})"
++
++
++cols = ["Topology", "Algorithm", "Placed", "Retries per resume", "Bind p99", "ResumeActor p50",
++        "ResumeActor p99", "Restore p99", "Crashes", "Detaches", "Empty +8 min"]
++
++for pattern in ["ramp-down", "burst"]:
++    table = []
++    star_rows = {}
++    for topo, d, label in TOPOS:
++        rows = [r for r in rows_for(d) if r["pattern"] == pattern and r["valid"]]
++        by = defaultdict(list)
++        for r in rows:
++            by[r["policy"]].append(r)
++        med = {p: {k: statistics.median([r[k] for r in by[p]]) for k in ("p99", "crash", "e480")}
++               for p, _ in POLICIES if by[p]}
++        base = med.get("p2c")
++        qual = []
++        for p, _ in POLICIES:
++            if p not in med or base is None:
++                continue
++            ok = (all(r["unplaced"] == 0 for r in by[p]) and med[p]["crash"] <= base["crash"]
++                  and med[p]["p99"] <= 1.5 * base["p99"])
++            if ok:
++                qual.append(p)
++        if qual:
++            if pattern == "ramp-down":
++                star = max(qual, key=lambda p: (med[p]["e480"], -med[p]["p99"]))
++            else:
++                star = min(qual, key=lambda p: med[p]["p99"])
++            star_rows[topo] = star
++        for i, (p, name) in enumerate(POLICIES):
++            rs = by[p]
++            unpl = sum(r["unplaced"] for r in rs)
++            mark = "★ " if star_rows.get(topo) == p else "  "
++            table.append([f"{topo} ({label})" if i == 0 else "", mark + name,
++                          "all" if unpl == 0 else f"{unpl:g} unplaced",
++                          cell([r["rpr"] for r in rs], "rpr"),
++                          cell([r["bind"] for r in rs if not math.isnan(r["bind"])], "ms"),
++                          cell([r["p50"] for r in rs], "ms"), cell([r["p99"] for r in rs], "ms"),
++                          cell([r["rest"] for r in rs if not math.isnan(r["rest"])], "ms"),
++                          cell([r["crash"] for r in rs], "n"), cell([r["det"] for r in rs], "n"),
++                          cell([r["e480"] for r in rs], "n") if pattern == "ramp-down" else "-"])
++        table.append(None)
++    widths = [max(len(c), *(len(r[i]) for r in table if r)) for i, c in enumerate(cols)]
++    sep = "─┼─".join("─" * w for w in widths)
++    print(f"## {pattern}\n\n```")
++    print(" │ ".join(c.ljust(w) for c, w in zip(cols, widths)))
++    print(sep)
++    for r in table[:-1]:
++        print(sep if r is None else " │ ".join(c.ljust(w) for c, w in zip(r, widths)))
++    print("```\n")
+diff --git a/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/monitoring-gke.yaml b/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/monitoring-gke.yaml
+new file mode 100644
+index 000000000..dafa1cb8d
+--- /dev/null
++++ b/cmd/ateapi/internal/scheduling/schedsim/gke-results/tools/monitoring-gke.yaml
+@@ -0,0 +1,826 @@
++# Copyright 2026 The Agent Substrate Authors
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++apiVersion: v1
++kind: Namespace
++metadata:
++  name: benchmarking
++  labels:
++    # Admits the benchmark clients to the Substrate API through
++    # manifests/ate-install/ate-system-networkpolicies.yaml.
++    ate.dev/api-access: "true"
++---
++apiVersion: v1
++kind: ServiceAccount
++metadata:
++  name: prometheus
++  namespace: benchmarking
++---
++apiVersion: rbac.authorization.k8s.io/v1
++kind: Role
++metadata:
++  name: prometheus
++  namespace: benchmarking
++rules:
++- apiGroups: [""]
++  resources: ["nodes", "nodes/proxy", "services", "endpoints", "pods"]
++  verbs: ["get", "list", "watch"]
++- apiGroups: ["extensions", "networking.k8s.io"]
++  resources: ["ingresses"]
++  verbs: ["get", "list", "watch"]
++---
++apiVersion: rbac.authorization.k8s.io/v1
++kind: RoleBinding
++metadata:
++  name: prometheus
++  namespace: benchmarking
++roleRef:
++  apiGroup: rbac.authorization.k8s.io
++  kind: Role
++  name: prometheus
++subjects:
++- kind: ServiceAccount
++  name: prometheus
++  namespace: benchmarking
++---
++# A node is a cluster-scoped resource. Thus the namespaced Role above cannot
++# give access to node discovery or to the kubelet proxy. The cadvisor scrape
++# job needs the two permissions.
++apiVersion: rbac.authorization.k8s.io/v1
++kind: ClusterRole
++metadata:
++  name: prometheus-benchmarking-nodes
++rules:
++- apiGroups: [""]
++  resources: ["nodes", "nodes/proxy", "nodes/metrics"]
++  verbs: ["get", "list", "watch"]
++- nonResourceURLs: ["/metrics"]
++  verbs: ["get"]
++---
++apiVersion: rbac.authorization.k8s.io/v1
++kind: ClusterRoleBinding
++metadata:
++  name: prometheus-benchmarking-nodes
++roleRef:
++  apiGroup: rbac.authorization.k8s.io
++  kind: ClusterRole
++  name: prometheus-benchmarking-nodes
++subjects:
++- kind: ServiceAccount
++  name: prometheus
++  namespace: benchmarking
++---
++# The postgres-exporter job discovers pods in ate-system. A Role there would
++# go with the namespace, which every automated test deletes and recreates.
++apiVersion: rbac.authorization.k8s.io/v1
++kind: ClusterRole
++metadata:
++  name: prometheus-benchmarking-pods
++rules:
++- apiGroups: [""]
++  resources: ["pods"]
++  verbs: ["get", "list", "watch"]
++---
++apiVersion: rbac.authorization.k8s.io/v1
++kind: ClusterRoleBinding
++metadata:
++  name: prometheus-benchmarking-pods
++roleRef:
++  apiGroup: rbac.authorization.k8s.io
++  kind: ClusterRole
++  name: prometheus-benchmarking-pods
++subjects:
++- kind: ServiceAccount
++  name: prometheus
++  namespace: benchmarking
++---
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: prometheus-config
++  namespace: benchmarking
++data:
++  prometheus.yml: |
++    global:
++      scrape_interval: 10s
++    scrape_configs:
++      - job_name: 'kubernetes-pods'
++        kubernetes_sd_configs:
++          - role: pod
++            namespaces:
++              names:
++                - benchmarking
++        relabel_configs:
++          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
++            action: keep
++            regex: "true"
++          - source_labels: [__meta_kubernetes_pod_name]
++            action: replace
++            target_label: pod
++          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
++            action: replace
++            target_label: __metrics_path__
++            regex: (.+)
++          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
++            action: replace
++            regex: ([^:]+)(?::\d+)?;(\d+)
++            replacement: $1:$2
++            target_label: __address__
++
++      # Scheduler experiment: ate-api-server and atelet serve /metrics on the
++      # port their prometheus.io/port annotation names.
++      - job_name: 'ate-system-pods'
++        kubernetes_sd_configs:
++          - role: pod
++            namespaces:
++              names:
++                - ate-system
++        relabel_configs:
++          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
++            action: keep
++            regex: "true"
++          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
++            action: replace
++            regex: ([^:]+)(?::\d+)?;(\d+)
++            replacement: $1:$2
++            target_label: __address__
++          - source_labels: [__meta_kubernetes_pod_name]
++            target_label: pod
++          - source_labels: [__meta_kubernetes_pod_label_app]
++            target_label: app
++          - source_labels: [__meta_kubernetes_pod_node_name]
++            target_label: node
++
++      # The telemetry-meter gives its substrate_* counts on port 8889, which
++      # the annotation job above collects. It gives its own otelcol_* counters
++      # on port 8888. The annotation relabel can name only one port, thus
++      # scrape port 8888 here. When a service reports zero volume,
++      # otelcol_receiver_accepted_* shows the difference between "sent nothing"
++      # and "arrived nowhere".
++      - job_name: 'telemetry-meter-self'
++        kubernetes_sd_configs:
++          - role: pod
++            namespaces:
++              names:
++                - benchmarking
++        relabel_configs:
++          - source_labels:
++              - __meta_kubernetes_pod_label_app
++              - __meta_kubernetes_pod_container_port_number
++            action: keep
++            regex: telemetry-meter;8888
++          - source_labels: [__meta_kubernetes_pod_name]
++            action: replace
++            target_label: pod
++
++      # The locust pod annotates port 8000 for the Python locust process. The
++      # boomer-worker sidecar exposes its Prometheus metrics on port 8001, and
++      # so does boomer inside an automation runner Job.
++      - job_name: 'boomer-worker'
++        kubernetes_sd_configs:
++          - role: pod
++            namespaces:
++              names:
++                - benchmarking
++        relabel_configs:
++          - source_labels:
++              - __meta_kubernetes_pod_label_app
++              - __meta_kubernetes_pod_container_port_number
++            action: keep
++            regex: (locust|substrate-benchmark-runner);8001
++          - source_labels: [__meta_kubernetes_pod_name]
++            action: replace
++            target_label: pod
++
++      # The postgres_exporter sidecar that an automation test with a
++      # `controlPlane:` block adds to Postgres (benchmarking/automation/
++      # controlplane.py): connections by state, commits, cache hits, and
++      # pg_stat_statements.
++      - job_name: 'postgres-exporter'
++        kubernetes_sd_configs:
++          - role: pod
++            namespaces:
++              names:
++                - ate-system
++        relabel_configs:
++          - source_labels:
++              - __meta_kubernetes_pod_label_app
++              - __meta_kubernetes_pod_container_port_number
++            action: keep
++            regex: postgres;9187
++          - source_labels: [__meta_kubernetes_pod_name]
++            action: replace
++            target_label: pod
++
++      # The container memory directly from the cAdvisor endpoint of the
++      # kubelet. `kubectl top` reads metrics-server, which reports an average
++      # across its own window and hides short peaks.
++      # container_memory_working_set_bytes is the value that the OOM killer
++      # uses.
++      - job_name: 'kubernetes-cadvisor'
++        scheme: https
++        tls_config:
++          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
++          insecure_skip_verify: true
++        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
++        kubernetes_sd_configs:
++          - role: node
++        relabel_configs:
++          - action: labelmap
++            regex: __meta_kubernetes_node_label_(.+)
++          - target_label: __address__
++            replacement: kubernetes.default.svc:443
++          - source_labels: [__meta_kubernetes_node_name]
++            regex: (.+)
++            target_label: __metrics_path__
++            replacement: /api/v1/nodes/$1/proxy/metrics/cadvisor
++        metric_relabel_configs:
++          # cAdvisor reports host-level root cgroup metrics (such as Linux kernel
++          # PSI pressure stall information) with id="/" and an empty container
++          # label. Relabel id="/" to container="node" before dropping empty
++          # container labels so host-level pressure and utilization are kept.
++          - source_labels: [id]
++            regex: ^/$
++            target_label: container
++            replacement: node
++          # cAdvisor sends a very large number of metrics. Keep only the
++          # metrics that the benchmarks read: kernel pressure stall (PSI),
++          # container network bandwidth, disk I/O, memory RSS/working-set,
++          # CPU utilization, CFS throttling, and OOM kill events.
++          - source_labels: [__name__]
++            action: keep
++            regex: container_((.*pressure.*)|network_(receive|transmit)_bytes_total|fs_(reads|writes)_bytes_total|memory_rss|memory_working_set_bytes|cpu_usage_seconds_total|cpu_cfs_.*|spec_memory_limit_bytes|oom_events_total)
++          # Drop the series that have an empty container label only for cumulative
++          # memory working set and CPU usage. cAdvisor gives a rollup for the whole
++          # pod cgroup next to the series for each container; keeping both counts
++          # the memory/CPU of each pod two times. Dropping empty container on other
++          # metrics (such as network or PSI) would drop valid pod/node stats.
++          - source_labels: [__name__, container]
++            action: drop
++            regex: container_(memory_working_set_bytes|cpu_usage_seconds_total);$
++---
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  name: prometheus
++  namespace: benchmarking
++  labels:
++    app: prometheus
++spec:
++  replicas: 1
++  selector:
++    matchLabels:
++      app: prometheus
++  template:
++    metadata:
++      labels:
++        app: prometheus
++    spec:
++      serviceAccountName: prometheus
++      # Allows scheduling on the ate.dev/benchmarking load-generator pool.
++      # Scheduler experiment: keep Prometheus off the worker nodes under test.
++      nodeSelector:
++        ate.dev/workloadType: ate-system-infra
++      tolerations:
++      - key: ate.dev/workloadType
++        operator: Equal
++        value: ate-system-infra
++        effect: NoSchedule
++      containers:
++      - name: prometheus
++        image: prom/prometheus:v2.45.0
++        args:
++          - "--config.file=/etc/prometheus/prometheus.yml"
++          - "--storage.tsdb.path=/prometheus/"
++        ports:
++        - containerPort: 9090
++        volumeMounts:
++        - name: config-volume
++          mountPath: /etc/prometheus/
++      volumes:
++      - name: config-volume
++        configMap:
++          name: prometheus-config
++---
++apiVersion: v1
++kind: Service
++metadata:
++  name: prometheus
++  namespace: benchmarking
++spec:
++  selector:
++    app: prometheus
++  ports:
++    - protocol: TCP
++      port: 9090
++      targetPort: 9090
++---
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: grafana-datasources
++  namespace: benchmarking
++data:
++  prometheus.yaml: |-
++    apiVersion: 1
++    datasources:
++    - name: Prometheus
++      type: prometheus
++      url: http://prometheus:9090
++      access: proxy
++      isDefault: true
++---
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: grafana-dashboards-provider
++  namespace: benchmarking
++data:
++  provider.yaml: |-
++    apiVersion: 1
++    providers:
++    - name: 'default'
++      orgId: 1
++      folder: 'Locust'
++      type: file
++      disableDeletion: false
++      updateIntervalSeconds: 10
++      editable: true
++      options:
++        path: /var/lib/grafana/dashboards
++---
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: grafana-dashboards
++  namespace: benchmarking
++data:
++  locust-dashboard.json: |-
++    {
++      "uid": "locust-load-test-dashboard",
++      "title": "ATE API",
++      "panels": [
++        {
++          "title": "GetActor QPS",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
++          "targets": [
++            { "expr": "sum(rate(locust_requests_total_total{name=\"GetActor\"}[1m])) or sum(rate(locust_requests_total{name=\"GetActor\"}[1m]))", "refId": "A", "legendFormat": "Total" },
++            { "expr": "sum(rate(locust_requests_total_total{name=\"GetActor\"}[1m])) by (status) or sum(rate(locust_requests_total{name=\"GetActor\"}[1m])) by (status)", "refId": "B", "legendFormat": "{{status}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "req/sec" } }
++        },
++        {
++          "title": "GetActor Latency 99th Pct",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
++          "targets": [
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"GetActor\"}[1m])) by (le))", "refId": "A", "legendFormat": "Total" },
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"GetActor\"}[1m])) by (le, status))", "refId": "B", "legendFormat": "{{status}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "ms" } }
++        },
++        {
++          "title": "GetActor Latency Heatmap",
++          "type": "heatmap",
++          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
++          "targets": [
++            {
++              "expr": "sum(rate(locust_request_duration_milliseconds_bucket{name=\"GetActor\"}[1m])) by (le)",
++              "refId": "A"
++            }
++          ],
++
++          "transformations": [
++            {
++              "id": "labelsToFields",
++              "options": {
++                "valueLabel": "le"
++              }
++            }
++          ],
++          "options": {
++            "calculate": false,
++            "yAxis": {
++              "unit": "ms"
++            }
++          }
++        },
++        {
++          "title": "ResumeActor QPS",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
++          "targets": [
++            { "expr": "sum(rate(locust_requests_total_total{name=\"ResumeActor\"}[1m])) or sum(rate(locust_requests_total{name=\"ResumeActor\"}[1m]))", "refId": "A", "legendFormat": "Total" },
++            { "expr": "sum(rate(locust_requests_total_total{name=\"ResumeActor\"}[1m])) by (status) or sum(rate(locust_requests_total{name=\"ResumeActor\"}[1m])) by (status)", "refId": "B", "legendFormat": "{{status}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "req/sec" } }
++        },
++        {
++          "title": "ResumeActor Latency 99th Pct",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
++          "targets": [
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"ResumeActor\"}[1m])) by (le))", "refId": "A", "legendFormat": "Total" },
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"ResumeActor\"}[1m])) by (le, status))", "refId": "B", "legendFormat": "{{status}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "ms" } }
++        },
++        {
++          "title": "ResumeActor Latency Heatmap",
++          "type": "heatmap",
++          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
++          "targets": [
++            {
++              "expr": "sum(rate(locust_request_duration_milliseconds_bucket{name=\"ResumeActor\"}[1m])) by (le)",
++              "refId": "A"
++            }
++          ],
++
++          "transformations": [
++            {
++              "id": "labelsToFields",
++              "options": {
++                "valueLabel": "le"
++              }
++            }
++          ],
++          "options": {
++            "calculate": false,
++            "yAxis": {
++              "unit": "ms"
++            }
++          }
++        },
++        {
++          "title": "SuspendActor QPS",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
++          "targets": [
++            { "expr": "sum(rate(locust_requests_total_total{name=\"SuspendActor\"}[1m])) or sum(rate(locust_requests_total{name=\"SuspendActor\"}[1m]))", "refId": "A", "legendFormat": "Total" },
++            { "expr": "sum(rate(locust_requests_total_total{name=\"SuspendActor\"}[1m])) by (status) or sum(rate(locust_requests_total{name=\"SuspendActor\"}[1m])) by (status)", "refId": "B", "legendFormat": "{{status}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "req/sec" } }
++        },
++        {
++          "title": "SuspendActor Latency 99th Pct",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
++          "targets": [
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"SuspendActor\"}[1m])) by (le))", "refId": "A", "legendFormat": "Total" },
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"SuspendActor\"}[1m])) by (le, status))", "refId": "B", "legendFormat": "{{status}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "ms" } }
++        },
++        {
++          "title": "SuspendActor Latency Heatmap",
++          "type": "heatmap",
++          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 40 },
++          "targets": [
++            {
++              "expr": "sum(rate(locust_request_duration_milliseconds_bucket{name=\"SuspendActor\"}[1m])) by (le)",
++              "refId": "A"
++            }
++          ],
++
++          "transformations": [
++            {
++              "id": "labelsToFields",
++              "options": {
++                "valueLabel": "le"
++              }
++            }
++          ],
++          "options": {
++            "calculate": false,
++            "yAxis": {
++              "unit": "ms"
++            }
++          }
++        },
++        {
++          "title": "SuspendActorAsync QPS",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
++          "targets": [
++            { "expr": "sum(rate(locust_requests_total_total{name=\"SuspendActorAsync\"}[1m])) or sum(rate(locust_requests_total{name=\"SuspendActorAsync\"}[1m]))", "refId": "A", "legendFormat": "Total" },
++            { "expr": "sum(rate(locust_requests_total_total{name=\"SuspendActorAsync\"}[1m])) by (status) or sum(rate(locust_requests_total{name=\"SuspendActorAsync\"}[1m])) by (status)", "refId": "B", "legendFormat": "{{status}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "req/sec" } }
++        },
++        {
++          "title": "SuspendActorAsync Latency 99th Pct",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
++          "targets": [
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"SuspendActorAsync\"}[1m])) by (le))", "refId": "A", "legendFormat": "Total" },
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"SuspendActorAsync\"}[1m])) by (le, status))", "refId": "B", "legendFormat": "{{status}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "ms" } }
++        },
++        {
++          "title": "SuspendActorAsync Latency Heatmap",
++          "type": "heatmap",
++          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 56 },
++          "targets": [
++            {
++              "expr": "sum(rate(locust_request_duration_milliseconds_bucket{name=\"SuspendActorAsync\"}[1m])) by (le)",
++              "refId": "A"
++            }
++          ],
++          "transformations": [
++            {
++              "id": "labelsToFields",
++              "options": {
++                "valueLabel": "le"
++              }
++            }
++          ],
++          "options": {
++            "calculate": false,
++            "yAxis": {
++              "unit": "ms"
++            }
++          }
++        },
++        {
++          "title": "Hibernate Latency (Async vs Sync Suspend)",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 64 },
++          "targets": [
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"SuspendActorAsync\"}[1m])) by (le))", "refId": "A", "legendFormat": "SuspendActorAsync p99" },
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"SuspendActor\"}[1m])) by (le))", "refId": "B", "legendFormat": "SuspendActor p99" },
++            { "expr": "histogram_quantile(0.50, sum(rate(locust_request_duration_milliseconds_bucket{name=\"SuspendActorAsync\"}[1m])) by (le))", "refId": "C", "legendFormat": "SuspendActorAsync p50" },
++            { "expr": "histogram_quantile(0.50, sum(rate(locust_request_duration_milliseconds_bucket{name=\"SuspendActor\"}[1m])) by (le))", "refId": "D", "legendFormat": "SuspendActor p50" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "ms" } }
++        },
++        {
++          "title": "Locust Requesters (Active Users)",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 72 },
++          "targets": [
++            { "expr": "sum(locust_users) by (pod, user_class)", "refId": "A", "legendFormat": "{{pod}} - {{user_class}}" }
++          ]
++        }
++      ],
++
++      "schemaVersion": 38,
++      "version": 1
++    }
++  locust-counter-dashboard.json: |-
++    {
++      "uid": "locust-counter-demo-dashboard",
++      "title": "Counter Demo",
++      "panels": [
++        {
++          "title": "ResumeActor QPS",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
++          "targets": [
++            { "expr": "sum(rate(locust_requests_total_total{name=\"ResumeActor\", user_class=\"CounterUser\"}[1m])) or sum(rate(locust_requests_total{name=\"ResumeActor\", user_class=\"CounterUser\"}[1m]))", "refId": "A", "legendFormat": "Total" },
++            { "expr": "sum(rate(locust_requests_total_total{name=\"ResumeActor\", user_class=\"CounterUser\"}[1m])) by (status) or sum(rate(locust_requests_total{name=\"ResumeActor\", user_class=\"CounterUser\"}[1m])) by (status)", "refId": "B", "legendFormat": "{{status}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "req/sec" } }
++        },
++        {
++          "title": "ResumeActor Latency 99th Pct",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
++          "targets": [
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"ResumeActor\", user_class=\"CounterUser\"}[1m])) by (le))", "refId": "A", "legendFormat": "Total" },
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"ResumeActor\", user_class=\"CounterUser\"}[1m])) by (le, status))", "refId": "B", "legendFormat": "{{status}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "ms" } }
++        },
++        {
++          "title": "ResumeActor Latency Heatmap",
++          "type": "heatmap",
++          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
++          "targets": [
++            {
++              "expr": "sum(rate(locust_request_duration_milliseconds_bucket{name=\"ResumeActor\", user_class=\"CounterUser\"}[1m])) by (le)",
++              "refId": "A"
++            }
++          ],
++          "transformations": [
++            {
++              "id": "labelsToFields",
++              "options": {
++                "valueLabel": "le"
++              }
++            }
++          ],
++          "options": {
++            "calculate": false,
++            "yAxis": {
++              "unit": "ms"
++            }
++          }
++        },
++        {
++          "title": "RunCounter QPS",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
++          "targets": [
++            { "expr": "sum(rate(locust_requests_total_total{name=\"RunCounter\", user_class=\"CounterUser\"}[1m])) or sum(rate(locust_requests_total{name=\"RunCounter\", user_class=\"CounterUser\"}[1m]))", "refId": "A", "legendFormat": "Total" },
++            { "expr": "sum(rate(locust_requests_total_total{name=\"RunCounter\", user_class=\"CounterUser\"}[1m])) by (status) or sum(rate(locust_requests_total{name=\"RunCounter\", user_class=\"CounterUser\"}[1m])) by (status)", "refId": "B", "legendFormat": "{{status}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "req/sec" } }
++        },
++        {
++          "title": "RunCounter Latency 99th Pct",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
++          "targets": [
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"RunCounter\", user_class=\"CounterUser\"}[1m])) by (le))", "refId": "A", "legendFormat": "Total" },
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"RunCounter\", user_class=\"CounterUser\"}[1m])) by (le, status))", "refId": "B", "legendFormat": "{{status}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "ms" } }
++        },
++        {
++          "title": "RunCounter Latency Heatmap",
++          "type": "heatmap",
++          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
++          "targets": [
++            {
++              "expr": "sum(rate(locust_request_duration_milliseconds_bucket{name=\"RunCounter\", user_class=\"CounterUser\"}[1m])) by (le)",
++              "refId": "A"
++            }
++          ],
++          "transformations": [
++            {
++              "id": "labelsToFields",
++              "options": {
++                "valueLabel": "le"
++              }
++            }
++          ],
++          "options": {
++            "calculate": false,
++            "yAxis": {
++              "unit": "ms"
++            }
++          }
++        },
++        {
++          "title": "SuspendActor QPS",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
++          "targets": [
++            { "expr": "sum(rate(locust_requests_total_total{name=\"SuspendActor\", user_class=\"CounterUser\"}[1m])) or sum(rate(locust_requests_total{name=\"SuspendActor\", user_class=\"CounterUser\"}[1m]))", "refId": "A", "legendFormat": "Total" },
++            { "expr": "sum(rate(locust_requests_total_total{name=\"SuspendActor\", user_class=\"CounterUser\"}[1m])) by (status) or sum(rate(locust_requests_total{name=\"SuspendActor\", user_class=\"CounterUser\"}[1m])) by (status)", "refId": "B", "legendFormat": "{{status}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "req/sec" } }
++        },
++        {
++          "title": "SuspendActor Latency 99th Pct",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
++          "targets": [
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"SuspendActor\", user_class=\"CounterUser\"}[1m])) by (le))", "refId": "A", "legendFormat": "Total" },
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{name=\"SuspendActor\", user_class=\"CounterUser\"}[1m])) by (le, status))", "refId": "B", "legendFormat": "{{status}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "ms" } }
++        },
++        {
++          "title": "SuspendActor Latency Heatmap",
++          "type": "heatmap",
++          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 40 },
++          "targets": [
++            {
++              "expr": "sum(rate(locust_request_duration_milliseconds_bucket{name=\"SuspendActor\", user_class=\"CounterUser\"}[1m])) by (le)",
++              "refId": "A"
++            }
++          ],
++          "transformations": [
++            {
++              "id": "labelsToFields",
++              "options": {
++                "valueLabel": "le"
++              }
++            }
++          ],
++          "options": {
++            "calculate": false,
++            "yAxis": {
++              "unit": "ms"
++            }
++          }
++        },
++        {
++          "title": "Locust Requesters (Active Users)",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 48 },
++          "targets": [
++            { "expr": "sum(locust_users{user_class=\"CounterUser\"}) by (pod)", "refId": "A" }
++          ]
++        }
++      ],
++      "schemaVersion": 38,
++      "version": 1
++    }
++  locust-workloads-dashboard.json: |-
++    {
++      "uid": "locust-workloads-dashboard",
++      "title": "Workloads Benchmarking",
++      "panels": [
++        {
++          "title": "QPS by Workload",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
++          "targets": [
++            { "expr": "sum(rate(locust_requests_total_total{user_class=~\"SleepUser|UserMemUser|KernelMemUser|GluttonUser|DurdirUser\"}[1m])) by (user_class, name) or sum(rate(locust_requests_total{user_class=~\"SleepUser|UserMemUser|KernelMemUser|GluttonUser|DurdirUser\"}[1m])) by (user_class, name)", "refId": "A", "legendFormat": "{{user_class}} - {{name}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "req/sec" } }
++        },
++        {
++          "title": "Latency 99th Pct by Workload",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
++          "targets": [
++            { "expr": "histogram_quantile(0.99, sum(rate(locust_request_duration_milliseconds_bucket{user_class=~\"SleepUser|UserMemUser|KernelMemUser|GluttonUser|DurdirUser\"}[1m])) by (le, user_class, name))", "refId": "A", "legendFormat": "{{user_class}} - {{name}}" }
++          ],
++          "fieldConfig": { "defaults": { "unit": "ms" } }
++        },
++        {
++          "title": "Active Users by Workload",
++          "type": "timeseries",
++          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
++          "targets": [
++            { "expr": "sum(locust_users{user_class=~\"SleepUser|UserMemUser|KernelMemUser|GluttonUser|DurdirUser\"}) by (user_class)", "refId": "A", "legendFormat": "{{user_class}}" }
++          ]
++        }
++      ],
++      "schemaVersion": 38,
++      "version": 1
++    }
++---
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  name: grafana
++  namespace: benchmarking
++spec:
++  replicas: 1
++  selector:
++    matchLabels:
++      app: grafana
++  template:
++    metadata:
++      labels:
++        app: grafana
++    spec:
++      containers:
++      - name: grafana
++        image: grafana/grafana:10.0.0
++        env:
++        - name: GF_AUTH_ANONYMOUS_ENABLED
++          value: "true"
++        - name: GF_AUTH_ANONYMOUS_ORG_ROLE
++          value: "Admin"
++        - name: GF_AUTH_DISABLE_LOGIN_FORM
++          value: "true"
++        ports:
++        - containerPort: 3000
++        volumeMounts:
++        - name: grafana-datasources
++          mountPath: /etc/grafana/provisioning/datasources
++        - name: grafana-dashboards-provider
++          mountPath: /etc/grafana/provisioning/dashboards
++        - name: grafana-dashboards
++          mountPath: /var/lib/grafana/dashboards
++      volumes:
++      - name: grafana-datasources
++        configMap:
++          name: grafana-datasources
++      - name: grafana-dashboards-provider
++        configMap:
++          name: grafana-dashboards-provider
++      - name: grafana-dashboards
++        configMap:
++          name: grafana-dashboards
++---
++apiVersion: v1
++kind: Service
++metadata:
++  name: grafana
++  namespace: benchmarking
++spec:
++  selector:
++    app: grafana
++  ports:
++    - protocol: TCP
++      port: 3000
++      targetPort: 3000

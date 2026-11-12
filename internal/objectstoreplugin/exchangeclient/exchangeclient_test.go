@@ -18,18 +18,23 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/resolver"
+	"google.golang.org/grpc/resolver/manual"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/utils/lru"
 
 	"go.ate.dev/substrate/internal/objectstoreplugin/credential"
 	exchangepb "go.ate.dev/substrate/internal/proto/objectstoreexchangepb"
+	"go.ate.dev/substrate/internal/testcert"
 	"go.ate.dev/substrate/pkg/objectstorage"
 )
 
@@ -248,6 +253,37 @@ func TestNew_ChecksItsConfig(t *testing.T) {
 	}
 	if _, err := New(Config{Address: "api:8445", CAFile: filepath.Join(t.TempDir(), "absent.pem")}); err == nil {
 		t.Error("New with a missing CA bundle succeeded")
+	}
+}
+
+func TestNew_ResolvesTheAddressWithTheConfiguredResolver(t *testing.T) {
+	caFile := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(caFile, testcert.NewServerTLS(t, net.ParseIP("127.0.0.1")).RootCA, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	built := make(chan resolver.Target, 1)
+	r := manual.NewBuilderWithScheme("k8s")
+	r.BuildCallback = func(target resolver.Target, _ resolver.ClientConn, _ resolver.BuildOptions) { built <- target }
+	s, err := New(Config{Address: "k8s:///api.ate-system.svc:8445", CAFile: caFile, ServerName: "api.ate-system.svc", Resolver: r})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer s.Close()
+
+	// The resolver is built when the first call leaves idle. The call itself
+	// fails: the manual resolver never reports an address.
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if _, err := s.Client(ctx, "jwt", false); err == nil {
+		t.Fatal("Client() with no exchange address succeeded")
+	}
+	select {
+	case target := <-built:
+		if got, want := target.Endpoint(), "api.ate-system.svc:8445"; got != want {
+			t.Errorf("resolver built for %q, want %q", got, want)
+		}
+	default:
+		t.Error("the configured resolver was never built")
 	}
 }
 

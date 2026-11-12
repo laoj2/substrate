@@ -17,8 +17,11 @@ created from. The exchange is private to this plugin, defined in
 
 On the node side, `node` mode on GCS dials that exchange, at
 `--exchange-address` through the ate-api-server Service, verified with
-`--exchange-ca-file` and `--exchange-server-name`. Each `FetchSnapshot` or
-`UploadSnapshot` runs on a storage client built with the actor's token. The
+`--exchange-ca-file` and `--exchange-server-name`. The default address is a
+`k8s:///` target, resolved from the Service's EndpointSlices with the pod's
+service account, so the plugin follows ate-api-server rollouts at once. Each
+`FetchSnapshot` or `UploadSnapshot` runs on a storage client built with the
+actor's token. The
 token and the client are cached under the JWT they were obtained for, never
 under a claim read out of it, while at least twenty minutes remain, so the
 transfers that follow one another for an actor share connections. A client

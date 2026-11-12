@@ -1,0 +1,2 @@
+scenario,pattern,policy,seed,atespace,t_start,t_end,bind_p50_ms,bind_p99_ms,restore_p50_ms,restore_p99_ms,restore_local_p99_ms,restore_latest_p99_ms,restores,crashes_metric,node_psi_cpu_max_pct,node_psi_cpu_mean_pct,pod_psi_cpu_max_pct
+g-gke8,smoke,prefixsat:1:0.2,1,smoke-2,1794435622,1794435727,8.69,24.53,79.43,20700.0,99.5,21300.0,93.0,nan,0.69,0.28,0.16

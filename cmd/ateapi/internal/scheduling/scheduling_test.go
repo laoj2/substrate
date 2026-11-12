@@ -696,6 +696,64 @@ func seqIntn(vals ...int) func(int) int {
 	}
 }
 
+func TestSchedulePrefixPack(t *testing.T) {
+	prefixPack := Policy{Name: "prefixpack", K: 1, Watermark: 0.2}
+	nodeA := fleet{
+		worker("w-a-empty", "gvisor", "node-a", nil, withMaxActors(4)),
+		worker("w-a-light", "gvisor", "node-a", nil, withMaxActors(4), assigned("demo", "a1")),
+		worker("w-a-heavy", "gvisor", "node-a", nil, withMaxActors(4),
+			assigned("demo", "a2"), assigned("demo", "a3"), assigned("demo", "a4")),
+		worker("w-a-full", "gvisor", "node-a", nil, withMaxActors(1), assigned("demo", "a5")),
+		worker("w-b-heavy", "gvisor", "node-b", nil, withMaxActors(4),
+			assigned("demo", "b1"), assigned("demo", "b2"), assigned("demo", "b3")),
+	}
+	s := New(nodeA, WithIntn(firstIntn), WithPolicy(prefixPack))
+	got, err := s.Schedule(context.Background(), Constraints{RequiredNodes: []string{"node-a"}})
+	if err != nil {
+		t.Fatalf("Schedule() error = %v", err)
+	}
+	if got.GetWorkerPod() != "w-a-heavy" {
+		t.Errorf("Schedule() = %q, want the fullest worker with room on the pinned node, w-a-heavy", got.GetWorkerPod())
+	}
+}
+
+func TestSchedulePrefixPackUnpinnedMatchesPrefixSat(t *testing.T) {
+	f := fleet{
+		worker("w-0", "gvisor", "node-a", nil, withMaxActors(4)),
+		worker("w-1", "gvisor", "node-a", nil, withMaxActors(4), assigned("demo", "a")),
+		worker("w-2", "gvisor", "node-b", nil, withMaxActors(4), assigned("demo", "b"), assigned("demo", "c")),
+		worker("w-3", "gvisor", "node-b", nil, withMaxActors(4)),
+	}
+	// The window is w-0 and w-1, so these draw each of them first.
+	for _, intn := range [][]int{{0, 0}, {1, 0}} {
+		want, err := New(f, WithIntn(seqIntn(intn...)), WithPolicy(Policy{Name: "prefixsat", K: 1, Watermark: 0.2})).
+			Schedule(context.Background(), Constraints{})
+		if err != nil {
+			t.Fatalf("prefixsat Schedule() with intn %v error = %v", intn, err)
+		}
+		got, err := New(f, WithIntn(seqIntn(intn...)), WithPolicy(Policy{Name: "prefixpack", K: 1, Watermark: 0.2})).
+			Schedule(context.Background(), Constraints{})
+		if err != nil {
+			t.Fatalf("prefixpack Schedule() with intn %v error = %v", intn, err)
+		}
+		if got.GetWorkerPod() != want.GetWorkerPod() {
+			t.Errorf("prefixpack Schedule() with intn %v = %q, want prefixsat's %q", intn, got.GetWorkerPod(), want.GetWorkerPod())
+		}
+	}
+}
+
+func TestSchedulePrefixPackErrors(t *testing.T) {
+	f := fleet{
+		worker("w-a-full", "gvisor", "node-a", nil, withMaxActors(1), assigned("demo", "a1")),
+		worker("w-b-free", "gvisor", "node-b", nil, withMaxActors(4)),
+	}
+	s := New(f, WithIntn(firstIntn), WithPolicy(Policy{Name: "prefixpack", K: 1, Watermark: 0.2}))
+	_, err := s.Schedule(context.Background(), Constraints{RequiredNodes: []string{"node-a"}})
+	if !errors.Is(err, ErrNoCapacity) {
+		t.Errorf("Schedule() pinned to a full node error = %v, want ErrNoCapacity", err)
+	}
+}
+
 func TestSchedulePowerOfTwoChoicesShiftedSecondSample(t *testing.T) {
 	// intn yields i=0, then j=1; since j >= i the second sample shifts to
 	// candidates[2], the only lighter worker. An off-by-one in the shift would

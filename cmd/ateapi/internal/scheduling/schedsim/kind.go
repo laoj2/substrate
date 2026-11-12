@@ -23,6 +23,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"log"
+	"maps"
 	"math"
 	"math/rand"
 	"os"
@@ -99,7 +100,20 @@ type kindRun struct {
 
 	seriesMu sync.Mutex
 	series   [][]string
+	nodes    [][]string
 	stats    kindAgg
+
+	resumeMu  sync.Mutex
+	resumeLog [][]string
+}
+
+// logResume records one resume so its latency can be joined with server logs
+// by actor and time.
+func (r *kindRun) logResume(a kindActor, start time.Time, outcome string) {
+	r.resumeMu.Lock()
+	defer r.resumeMu.Unlock()
+	r.resumeLog = append(r.resumeLog, []string{a.name, strconv.FormatInt(start.UnixMilli(), 10),
+		fmt.Sprintf("%.1f", float64(time.Since(start))/float64(time.Millisecond)), outcome})
 }
 
 type kindActor struct {
@@ -492,6 +506,7 @@ func (r *kindRun) cycle(ctx context.Context, a kindActor) {
 			sawNoCap = true
 			if time.Since(first)+clientRetry > clientTimeout {
 				r.failed.Add(1)
+				r.logResume(a, first, "failed")
 				return
 			}
 			time.Sleep(clientRetry)
@@ -499,11 +514,13 @@ func (r *kindRun) cycle(ctx context.Context, a kindActor) {
 		}
 		r.otherErr.Add(1)
 		r.countErr(err)
+		r.logResume(a, first, "error:"+status.Code(err).String())
 		log.Printf("resume %s: %v", a.name, err)
 		_, _ = r.client().SuspendActor(ctx, &ateapi.SuspendActorRequest{Actor: r.ref(a.name)})
 		return
 	}
 	r.placed.Add(1)
+	r.logResume(a, first, "placed")
 	if sawNoCap {
 		r.waitedPlaced.Add(1)
 	}
@@ -591,9 +608,28 @@ func (r *kindRun) sample(el time.Duration, ws []*ateapi.Worker) {
 	if allocS > 0 {
 		held = min(heldS/allocS, heldC/allocC, heldM/allocM)
 	}
+	type nodeTot struct{ actors, workers, nonEmpty int }
+	byNode := map[string]*nodeTot{}
+	for _, w := range ws {
+		nt := byNode[w.GetNodeName()]
+		if nt == nil {
+			nt = &nodeTot{}
+			byNode[w.GetNodeName()] = nt
+		}
+		n := int(w.GetStatus().GetAllocated().GetActors())
+		nt.actors += n
+		nt.workers++
+		if n > 0 {
+			nt.nonEmpty++
+		}
+	}
 	r.seriesMu.Lock()
 	defer r.seriesMu.Unlock()
 	r.series = append(r.series, []string{strconv.Itoa(int(el / time.Second)), strconv.Itoa(awake), strconv.Itoa(nonEmpty), strconv.Itoa(lb), strconv.Itoa(len(ws) - nonEmpty), fmt.Sprintf("%.3f", held)})
+	for _, node := range slices.Sorted(maps.Keys(byNode)) {
+		nt := byNode[node]
+		r.nodes = append(r.nodes, []string{strconv.Itoa(int(el / time.Second)), node, strconv.Itoa(nt.actors), strconv.Itoa(nt.workers), strconv.Itoa(nt.nonEmpty)})
+	}
 	if awake == 0 {
 		return
 	}
@@ -703,6 +739,16 @@ func (r *kindRun) write() {
 	})
 	appendCSV(filepath.Join(r.f.out, "series.csv"), []string{"scenario", "pattern", "policy", "seed", "t", "awake", "nonempty", "lower_bound", "empty", "held_ratio"}, func(w *csv.Writer) {
 		for _, s := range r.series {
+			w.Write(append([]string{r.sc.name, r.pat.name, r.f.policy, strconv.FormatInt(r.f.seed, 10)}, s...))
+		}
+	})
+	appendCSV(filepath.Join(r.f.out, "nodes.csv"), []string{"scenario", "pattern", "policy", "seed", "t", "node", "actors", "workers", "nonempty_workers"}, func(w *csv.Writer) {
+		for _, s := range r.nodes {
+			w.Write(append([]string{r.sc.name, r.pat.name, r.f.policy, strconv.FormatInt(r.f.seed, 10)}, s...))
+		}
+	})
+	appendCSV(filepath.Join(r.f.out, "resumes.csv"), []string{"scenario", "pattern", "policy", "seed", "actor", "start_unix_ms", "ttp_ms", "outcome"}, func(w *csv.Writer) {
+		for _, s := range r.resumeLog {
 			w.Write(append([]string{r.sc.name, r.pat.name, r.f.policy, strconv.FormatInt(r.f.seed, 10)}, s...))
 		}
 	})

@@ -1,0 +1,128 @@
+2026/11/11 21:52:07 connected to 3 ate-api-server replicas
+2026/11/11 21:52:08 reset round 0: 0/240 actors not suspended
+2026/11/11 21:52:08 reset done: 24 workers, all empty
+2026/11/11 21:52:09 warm-up resume succeeded after 0 failures
+2026/11/11 21:52:09 reset round 0: 0/240 actors not suspended
+2026/11/11 21:52:09 reset done: 24 workers, all empty
+2026/11/11 21:57:12 load done after 5m3s, waiting for in-flight cycles
+2026/11/11 21:57:48 done: resumes=453 placed=453 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=235ms held=4.97 empty_drop=[]
+2026/11/11 21:58:53 connected to 3 ate-api-server replicas
+2026/11/11 21:58:53 reset round 0: 0/240 actors not suspended
+2026/11/11 21:58:53 reset done: 24 workers, all empty
+2026/11/11 21:58:54 warm-up resume succeeded after 0 failures
+2026/11/11 21:58:54 reset round 0: 0/240 actors not suspended
+2026/11/11 21:58:54 reset done: 24 workers, all empty
+2026/11/11 22:14:54 load done after 16m0s, waiting for in-flight cycles
+2026/11/11 22:19:52 done: resumes=1343 placed=1343 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=295ms held=4.96 empty_drop=[0 1 2 6]
+2026/11/11 22:23:12 connected to 3 ate-api-server replicas
+2026/11/11 22:23:12 reset round 0: 0/240 actors not suspended
+2026/11/11 22:23:12 reset done: 24 workers, all empty
+2026/11/11 22:23:13 warm-up resume succeeded after 0 failures
+2026/11/11 22:23:13 reset round 0: 0/240 actors not suspended
+2026/11/11 22:23:13 reset done: 24 workers, all empty
+2026/11/11 22:28:16 load done after 5m3s, waiting for in-flight cycles
+2026/11/11 22:28:54 done: resumes=459 placed=459 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=224ms held=3.06 empty_drop=[]
+2026/11/11 22:29:59 connected to 3 ate-api-server replicas
+2026/11/11 22:30:00 reset round 0: 0/240 actors not suspended
+2026/11/11 22:30:00 reset done: 24 workers, all empty
+2026/11/11 22:30:00 warm-up resume succeeded after 0 failures
+2026/11/11 22:30:00 reset round 0: 0/240 actors not suspended
+2026/11/11 22:30:00 reset done: 24 workers, all empty
+2026/11/11 22:46:00 load done after 16m0s, waiting for in-flight cycles
+2026/11/11 22:51:24 done: resumes=1395 placed=1395 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=200ms held=4.75 empty_drop=[1 8 6 8]
+2026/11/11 22:55:00 connected to 3 ate-api-server replicas
+2026/11/11 22:55:00 reset round 0: 0/240 actors not suspended
+2026/11/11 22:55:00 reset done: 24 workers, all empty
+2026/11/11 22:55:01 warm-up resume succeeded after 0 failures
+2026/11/11 22:55:01 reset round 0: 0/240 actors not suspended
+2026/11/11 22:55:01 reset done: 24 workers, all empty
+2026/11/11 23:11:01 load done after 16m0s, waiting for in-flight cycles
+2026/11/11 23:14:41 done: resumes=1340 placed=1340 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=224ms held=3.90 empty_drop=[3 7 9 13]
+2026/11/11 23:15:40 connected to 3 ate-api-server replicas
+2026/11/11 23:15:41 reset round 0: 0/240 actors not suspended
+2026/11/11 23:15:41 reset done: 24 workers, all empty
+2026/11/11 23:15:41 warm-up resume succeeded after 0 failures
+2026/11/11 23:15:42 reset round 0: 0/240 actors not suspended
+2026/11/11 23:15:42 reset done: 24 workers, all empty
+2026/11/11 23:20:45 load done after 5m3s, waiting for in-flight cycles
+2026/11/11 23:21:15 done: resumes=460 placed=460 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=251ms held=2.61 empty_drop=[]
+2026/11/11 23:24:47 connected to 3 ate-api-server replicas
+2026/11/11 23:24:48 reset round 0: 0/240 actors not suspended
+2026/11/11 23:24:48 reset done: 24 workers, all empty
+2026/11/11 23:24:48 warm-up resume succeeded after 0 failures
+2026/11/11 23:24:48 reset round 0: 0/240 actors not suspended
+2026/11/11 23:24:49 reset done: 24 workers, all empty
+2026/11/11 23:29:52 load done after 5m3s, waiting for in-flight cycles
+2026/11/11 23:30:24 done: resumes=439 placed=439 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=247ms held=3.00 empty_drop=[]
+2026/11/11 23:33:56 connected to 3 ate-api-server replicas
+2026/11/11 23:33:57 reset round 0: 0/240 actors not suspended
+2026/11/11 23:33:57 reset done: 24 workers, all empty
+2026/11/11 23:33:57 warm-up resume succeeded after 0 failures
+2026/11/11 23:33:58 reset round 0: 0/240 actors not suspended
+2026/11/11 23:33:58 reset done: 24 workers, all empty
+2026/11/11 23:39:01 load done after 5m3s, waiting for in-flight cycles
+2026/11/11 23:39:34 done: resumes=432 placed=432 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=220ms held=4.79 empty_drop=[]
+2026/11/11 23:40:37 connected to 3 ate-api-server replicas
+2026/11/11 23:40:38 reset round 0: 0/240 actors not suspended
+2026/11/11 23:40:38 reset done: 24 workers, all empty
+2026/11/11 23:40:38 warm-up resume succeeded after 0 failures
+2026/11/11 23:40:39 reset round 0: 0/240 actors not suspended
+2026/11/11 23:40:39 reset done: 24 workers, all empty
+2026/11/11 23:56:39 load done after 16m0s, waiting for in-flight cycles
+2026/11/12 00:00:03 done: resumes=1359 placed=1359 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=196ms held=4.56 empty_drop=[0 0 0 3]
+2026/11/12 00:03:34 connected to 3 ate-api-server replicas
+2026/11/12 00:03:34 reset round 0: 0/240 actors not suspended
+2026/11/12 00:03:34 reset done: 24 workers, all empty
+2026/11/12 00:03:35 warm-up resume succeeded after 0 failures
+2026/11/12 00:03:35 reset round 0: 0/240 actors not suspended
+2026/11/12 00:03:35 reset done: 24 workers, all empty
+2026/11/12 00:19:35 load done after 16m0s, waiting for in-flight cycles
+2026/11/12 00:22:26 done: resumes=1370 placed=1370 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=208ms held=3.77 empty_drop=[1 4 3 6]
+2026/11/12 00:25:48 connected to 3 ate-api-server replicas
+2026/11/12 00:25:48 reset round 0: 0/240 actors not suspended
+2026/11/12 00:25:48 reset done: 24 workers, all empty
+2026/11/12 00:25:49 warm-up resume succeeded after 0 failures
+2026/11/12 00:25:49 reset round 0: 0/240 actors not suspended
+2026/11/12 00:25:49 reset done: 24 workers, all empty
+2026/11/12 00:30:52 load done after 5m3s, waiting for in-flight cycles
+2026/11/12 00:31:30 done: resumes=456 placed=456 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=306ms held=2.87 empty_drop=[]
+2026/11/12 00:32:35 connected to 3 ate-api-server replicas
+2026/11/12 00:32:35 reset round 0: 0/240 actors not suspended
+2026/11/12 00:32:35 reset done: 24 workers, all empty
+2026/11/12 00:32:36 warm-up resume succeeded after 0 failures
+2026/11/12 00:32:36 reset round 0: 0/240 actors not suspended
+2026/11/12 00:32:36 reset done: 24 workers, all empty
+2026/11/12 00:48:36 load done after 16m0s, waiting for in-flight cycles
+2026/11/12 00:52:33 done: resumes=1354 placed=1354 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=517ms held=3.84 empty_drop=[2 5 5 15]
+2026/11/12 01:03:48 connected to 3 ate-api-server replicas
+2026/11/12 01:03:48 reset round 0: 0/240 actors not suspended
+2026/11/12 01:03:48 reset done: 24 workers, all empty
+2026/11/12 01:03:49 warm-up resume succeeded after 0 failures
+2026/11/12 01:03:49 reset round 0: 0/240 actors not suspended
+2026/11/12 01:03:49 reset done: 24 workers, all empty
+2026/11/12 01:19:49 load done after 16m0s, waiting for in-flight cycles
+2026/11/12 01:23:26 done: resumes=1361 placed=1361 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=201ms held=4.53 empty_drop=[0 0 2 5]
+2026/11/12 01:26:54 connected to 3 ate-api-server replicas
+2026/11/12 01:26:54 reset round 0: 0/240 actors not suspended
+2026/11/12 01:26:54 reset done: 24 workers, all empty
+2026/11/12 01:26:55 warm-up resume succeeded after 0 failures
+2026/11/12 01:26:56 reset round 0: 0/240 actors not suspended
+2026/11/12 01:26:56 reset done: 24 workers, all empty
+2026/11/12 01:42:56 load done after 16m0s, waiting for in-flight cycles
+2026/11/12 01:46:31 done: resumes=1369 placed=1369 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=205ms held=3.97 empty_drop=[1 2 4 7]
+2026/11/12 01:50:16 connected to 3 ate-api-server replicas
+2026/11/12 01:50:17 reset round 0: 0/240 actors not suspended
+2026/11/12 01:50:17 reset done: 24 workers, all empty
+2026/11/12 01:50:18 warm-up resume succeeded after 0 failures
+2026/11/12 01:50:18 reset round 0: 0/240 actors not suspended
+2026/11/12 01:50:18 reset done: 24 workers, all empty
+2026/11/12 02:06:18 load done after 16m0s, waiting for in-flight cycles
+2026/11/12 02:11:39 done: resumes=1318 placed=1318 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=208ms held=3.19 empty_drop=[2 6 5 15]
+2026/11/12 02:15:13 connected to 3 ate-api-server replicas
+2026/11/12 02:15:14 reset round 0: 0/240 actors not suspended
+2026/11/12 02:15:14 reset done: 24 workers, all empty
+2026/11/12 02:15:15 warm-up resume succeeded after 0 failures
+2026/11/12 02:15:15 reset round 0: 0/240 actors not suspended
+2026/11/12 02:15:15 reset done: 24 workers, all empty
+2026/11/12 02:20:18 load done after 5m3s, waiting for in-flight cycles
+2026/11/12 02:20:55 done: resumes=466 placed=466 no_capacity=0 waited=0 failed=0 other=0 [] ttp_p99=254ms held=2.91 empty_drop=[]

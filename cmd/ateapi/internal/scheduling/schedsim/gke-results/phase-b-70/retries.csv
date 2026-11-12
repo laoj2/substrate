@@ -1,0 +1,17 @@
+scenario,pattern,policy,seed,atespace,filled_up,version_conflict,detaches,crashes_log,stream_ok,ate_system_restarts,t_start,t_end
+g-gke8-70,burst,p2c,1,c70-01,0,0,0,0,yes,0,1794451924,1794452268
+g-gke8-70,ramp-down,p2c,1,c70-02,0,0,0,0,yes,0,1794452328,1794453592
+g-gke8-70,burst,prefixsat:1:0.2,1,c70-03,0,0,0,0,yes,0,1794453788,1794454134
+g-gke8-70,ramp-down,prefixsat:1:0.2,1,c70-04,0,0,2,0,yes,0,1794454195,1794455484
+g-gke8-70,ramp-down,bestofd:3,1,c70-05,5,0,7,0,no,0,1794455696,1794456881
+g-gke8-70,burst,bestofd:3,1,c70-06,3,0,3,0,yes,0,1794456937,1794457275
+g-gke8-70,burst,prefixsat:1:0.2,2,c70-07,1,0,1,0,yes,0,1794457484,1794457824
+g-gke8-70,burst,p2c,2,c70-08,0,0,0,0,yes,0,1794458033,1794458374
+g-gke8-70,ramp-down,p2c,2,c70-09,0,0,2,0,yes,0,1794458434,1794459603
+g-gke8-70,ramp-down,prefixsat:1:0.2,2,c70-10,6,0,5,0,yes,0,1794459810,1794460946
+g-gke8-70,burst,bestofd:3,2,c70-11,3,0,3,0,yes,0,1794461144,1794461490
+g-gke8-70,ramp-down,bestofd:3,2,c70-12,9,0,18,0,yes,0,1794461551,1794462753
+g-gke8-70,ramp-down,p2c,3,c70-13,0,0,0,0,yes,0,1794463424,1794464606
+g-gke8-70,ramp-down,prefixsat:1:0.2,3,c70-14,1,0,3,0,yes,0,1794464810,1794465991
+g-gke8-70,ramp-down,bestofd:3,3,c70-15,4,0,6,0,yes,0,1794466212,1794467499
+g-gke8-70,burst,prefixsat:1:0.2,3,c70-16,0,0,2,0,yes,0,1794467710,1794468055

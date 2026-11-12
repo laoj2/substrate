@@ -20,9 +20,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"math/bits"
-	"log/slog"
 	"math/rand"
 	"os"
 	"slices"
@@ -115,7 +115,8 @@ type Option func(*scheduler)
 // compare fragmentation against P2C and is not meant for upstream.
 type Policy struct {
 	// Name is one of p2c (the default), random, mostallocated, bestofd, topk,
-	// watermark, firstfit, oldestofd or prefix.
+	// watermark, firstfit, oldestofd, or a prefix policy: prefix, prefixsat,
+	// prefixbest or prefixpack.
 	Name string
 	// K is the sample size for bestofd, and the pool to pick from at random
 	// for topk, watermark and firstfit. For prefix it is the least free
@@ -289,7 +290,8 @@ func (s *scheduler) Schedule(ctx context.Context, constraints Constraints) (*ate
 // depend on --max-actors. It returns the less loaded of two random workers
 // with room in that prefix. Workers past the prefix get no new actors, so they
 // empty as their actors suspend. A LongLived actor goes to one of the two
-// oldest workers with room instead. EXPERIMENT ONLY.
+// oldest workers with room instead. prefixpack sends an actor pinned to a node
+// (RequiredNodes) to the fullest worker with room there. EXPERIMENT ONLY.
 func (s *scheduler) schedulePrefix(workers []*ateapi.Worker, constraints Constraints) (*ateapi.Worker, error) {
 	type entry struct {
 		cand    candidate
@@ -308,6 +310,20 @@ func (s *scheduler) schedulePrefix(workers []*ateapi.Worker, constraints Constra
 			}
 		}
 		eligible = append(eligible, e)
+	}
+	// A pinned actor's window holds only its node's few workers, and picking
+	// the less loaded of two there keeps all of them busy.
+	if s.policy.Name == "prefixpack" && len(constraints.RequiredNodes) > 0 {
+		var best *candidate
+		for i := range eligible {
+			if e := &eligible[i]; e.hasRoom && (best == nil || e.cand.after > best.after) {
+				best = &e.cand
+			}
+		}
+		if best == nil {
+			return nil, ErrNoCapacity
+		}
+		return best.worker, nil
 	}
 	slices.SortFunc(eligible, func(a, b entry) int {
 		if olderThan(&a.cand, &b.cand) {
@@ -354,9 +370,9 @@ func (s *scheduler) schedulePrefix(workers []*ateapi.Worker, constraints Constra
 		a, b = b, a
 	}
 	// a is the less loaded. prefixbest always takes the fuller one. prefixsat
-	// takes it only when saturated, where spreading would leave no worker
-	// with room for a large actor.
-	if s.policy.Name == "prefixbest" || (s.policy.Name == "prefixsat" && saturated) {
+	// and prefixpack take it only when saturated, where spreading would leave
+	// no worker with room for a large actor.
+	if s.policy.Name == "prefixbest" || ((s.policy.Name == "prefixsat" || s.policy.Name == "prefixpack") && saturated) {
 		return b.worker, nil
 	}
 	return a.worker, nil

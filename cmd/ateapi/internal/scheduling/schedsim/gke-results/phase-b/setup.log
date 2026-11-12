@@ -1,0 +1,437 @@
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 17:23:10 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 17:23:10 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 17:23:10 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 17:23:14 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 17:23:16 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 17:23:16 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 17:23:40 connected to 3 ate-api-server replicas
+2026/11/11 17:23:41 created 100/240
+2026/11/11 17:23:41 created 200/240
+2026/11/11 17:23:42 reset round 0: 0/240 actors not suspended
+2026/11/11 17:23:42 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-01
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 17:31:11 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 17:31:11 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 17:31:11 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 17:31:15 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 17:31:17 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 17:31:17 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 17:31:41 connected to 3 ate-api-server replicas
+2026/11/11 17:31:42 created 100/240
+2026/11/11 17:31:42 created 200/240
+2026/11/11 17:31:43 reset round 0: 0/240 actors not suspended
+2026/11/11 17:31:43 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-02
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 17:53:33 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 17:53:34 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 17:53:34 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 17:53:39 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 17:53:41 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 17:53:41 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 17:53:58 connected to 3 ate-api-server replicas
+2026/11/11 17:53:59 created 100/240
+2026/11/11 17:53:59 created 200/240
+2026/11/11 17:54:00 reset round 0: 0/240 actors not suspended
+2026/11/11 17:54:00 reset done: 24 workers, all empty
+E1111 17:54:00.290136 1621016 portforward.go:525] "Error copying from local connection to remote stream" err="writeto tcp4 127.0.0.1:45337->127.0.0.1:46902: websocket: close sent" logger="UnhandledError" localPort=45337 remotePort=443
+setup done: scenario g-gke8, atespace cell-03
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 18:01:28 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 18:01:29 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 18:01:29 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 18:01:33 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 18:01:35 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 18:01:35 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 18:01:59 connected to 3 ate-api-server replicas
+2026/11/11 18:02:00 created 100/240
+2026/11/11 18:02:00 created 200/240
+2026/11/11 18:02:01 reset round 0: 0/240 actors not suspended
+2026/11/11 18:02:01 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-04
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 18:24:30 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 18:24:31 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 18:24:31 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 18:24:39 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 18:24:42 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 18:24:42 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 18:25:07 connected to 3 ate-api-server replicas
+2026/11/11 18:25:08 created 100/240
+2026/11/11 18:25:08 created 200/240
+2026/11/11 18:25:09 reset round 0: 0/240 actors not suspended
+2026/11/11 18:25:09 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-05
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 18:48:10 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 18:48:11 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 18:48:11 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 18:48:15 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 18:48:17 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 18:48:17 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 18:48:43 connected to 3 ate-api-server replicas
+2026/11/11 18:48:44 created 100/240
+2026/11/11 18:48:44 created 200/240
+2026/11/11 18:48:45 reset round 0: 0/240 actors not suspended
+2026/11/11 18:48:45 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-06
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 18:54:56 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 18:54:56 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 18:54:56 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 18:55:00 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 18:55:02 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 18:55:02 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 18:55:25 connected to 3 ate-api-server replicas
+2026/11/11 18:55:26 created 100/240
+2026/11/11 18:55:27 created 200/240
+2026/11/11 18:55:27 reset round 0: 0/240 actors not suspended
+2026/11/11 18:55:27 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-07
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 19:03:00 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 19:03:01 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 19:03:01 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 19:03:08 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 19:03:11 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 19:03:11 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 19:03:29 connected to 3 ate-api-server replicas
+2026/11/11 19:03:30 created 100/240
+2026/11/11 19:03:30 created 200/240
+2026/11/11 19:03:31 reset round 0: 0/240 actors not suspended
+2026/11/11 19:03:31 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-08
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 19:11:02 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 19:11:03 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-results/
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 19:11:03 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 19:11:07 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 19:11:09 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 19:11:09 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 19:11:34 connected to 3 ate-api-server replicas
+2026/11/11 19:11:35 created 100/240
+2026/11/11 19:11:36 created 200/240
+2026/11/11 19:11:36 reset round 0: 0/240 actors not suspended
+2026/11/11 19:11:36 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-09
+target context: gke_gke-luizaoj-test-dev_europe-west4-a_autoscale-exp
+namespace/benchmark-workloads created
+2026/11/11 19:33:25 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 19:33:25 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-results/
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 19:33:25 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 19:33:29 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 19:33:31 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 19:33:31 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+error: timed out waiting for the condition on workerpools/pool
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 19:48:46 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 19:48:46 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-results/
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 19:48:46 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 19:48:50 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 19:48:52 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 19:48:52 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 19:49:18 connected to 3 ate-api-server replicas
+2026/11/11 19:49:19 created 100/240
+2026/11/11 19:49:19 created 200/240
+2026/11/11 19:49:20 reset round 0: 0/240 actors not suspended
+2026/11/11 19:49:20 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-11
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 19:56:51 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 19:56:51 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-results/
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 19:56:51 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 19:56:55 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 19:56:57 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 19:56:57 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 19:57:15 connected to 3 ate-api-server replicas
+2026/11/11 19:57:16 created 100/240
+2026/11/11 19:57:17 created 200/240
+2026/11/11 19:57:17 reset round 0: 0/240 actors not suspended
+2026/11/11 19:57:17 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-12
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 20:22:12 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 20:22:13 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-results/
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 20:22:13 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 20:22:17 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 20:22:18 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 20:22:18 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 20:22:42 connected to 3 ate-api-server replicas
+2026/11/11 20:22:43 created 100/240
+2026/11/11 20:22:43 created 200/240
+2026/11/11 20:22:43 reset round 0: 0/240 actors not suspended
+2026/11/11 20:22:44 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-13
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 20:45:43 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 20:45:43 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-results/
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 20:45:43 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 20:45:47 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 20:45:49 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 20:45:49 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 20:46:13 connected to 3 ate-api-server replicas
+2026/11/11 20:46:14 created 100/240
+2026/11/11 20:46:14 created 200/240
+2026/11/11 20:46:15 reset round 0: 0/240 actors not suspended
+2026/11/11 20:46:15 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-14
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 20:52:29 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 20:52:29 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-results/
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 20:52:29 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 20:52:33 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 20:52:35 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 20:52:35 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 20:52:59 connected to 3 ate-api-server replicas
+2026/11/11 20:53:00 created 100/240
+2026/11/11 20:53:00 created 200/240
+2026/11/11 20:53:00 reset round 0: 0/240 actors not suspended
+2026/11/11 20:53:01 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-15
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 21:16:26 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 21:16:27 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-results/
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 21:16:27 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 21:16:32 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 21:16:34 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 21:16:34 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 21:16:57 connected to 3 ate-api-server replicas
+2026/11/11 21:16:59 created 100/240
+2026/11/11 21:16:59 created 200/240
+2026/11/11 21:16:59 reset round 0: 0/240 actors not suspended
+2026/11/11 21:17:00 reset done: 24 workers, all empty
+E1111 21:17:00.042251 2953030 portforward.go:525] "Error copying from local connection to remote stream" err="writeto tcp4 127.0.0.1:33483->127.0.0.1:46136: websocket: close sent" logger="UnhandledError" localPort=33483 remotePort=443
+setup done: scenario g-gke8, atespace cell-16
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 21:24:29 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 21:24:29 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-results/
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 21:24:29 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 21:24:33 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 21:24:35 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 21:24:35 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 21:25:01 connected to 3 ate-api-server replicas
+2026/11/11 21:25:02 created 100/240
+2026/11/11 21:25:03 created 200/240
+2026/11/11 21:25:03 reset round 0: 0/240 actors not suspended
+2026/11/11 21:25:03 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-17
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/12 00:53:08 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/12 00:53:09 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-results/
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/12 00:53:09 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/12 00:53:13 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/12 00:53:15 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/12 00:53:15 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/12 00:53:39 connected to 3 ate-api-server replicas
+2026/11/12 00:53:40 created 100/240
+2026/11/12 00:53:40 created 200/240
+2026/11/12 00:53:41 reset round 0: 0/240 actors not suspended
+2026/11/12 00:53:41 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace cell-18

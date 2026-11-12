@@ -1,0 +1,73 @@
+=== 2026-11-11T17:23:00-05:00 cell 01: burst p2c seed 1 atespace cell-01
+g-gke8,burst,p2c,1,cell-01,0,0,0,0,yes,0,1794435909,1794436253
+g-gke8,burst,p2c,1,551.0000,551.0000,0.0000,0.0000,0.0000,0.0000,159.1132,179.9380,192.2457,4.2507,3.8567,0.1095,0.5306,0.0052,NaN,NaN,NaN,NaN,NaN,NaN,1.0000,7.0000,34.0000,28.0000
+{'scenario': 'g-gke8', 'pattern': 'burst', 'policy': 'p2c', 'seed': '1', 'atespace': 'cell-01', 't_start': '1794435909', 't_end': '1794436253', 'bind_p50_ms': 8.17, 'bind_p99_ms': 24.29, 'restore_p50_ms': 75.14, 'restore_p99_ms': 99.77, 'restore_local_p99_ms': 99.66, 'restore_latest_p99_ms': 99.93, 'restores': 552.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 1.12, 'node_psi_cpu_mean_pct': 0.35, 'pod_psi_cpu_max_pct': 0.18}
+=== 2026-11-11T17:31:01-05:00 cell 02: ramp-down p2c seed 1 atespace cell-02
+g-gke8,ramp-down,p2c,1,cell-02,1,0,124,0,yes,0,1794436314,1794437592
+g-gke8,ramp-down,p2c,1,1802.0000,1802.0000,0.0000,0.0000,0.0000,0.0000,161.5934,470.7881,527.3102,4.2863,2.7271,0.3164,1.2110,0.0749,NaN,3.2375,0.0000,1.0000,1.0000,1.0000,1.0000,8.0000,37.0000,29.0000
+{'scenario': 'g-gke8', 'pattern': 'ramp-down', 'policy': 'p2c', 'seed': '1', 'atespace': 'cell-02', 't_start': '1794436314', 't_end': '1794437592', 'bind_p50_ms': 8.58, 'bind_p99_ms': 24.64, 'restore_p50_ms': 77.1, 'restore_p99_ms': 235.52, 'restore_local_p99_ms': 99.92, 'restore_latest_p99_ms': 335.0, 'restores': 1803.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 1.17, 'node_psi_cpu_mean_pct': 0.36, 'pod_psi_cpu_max_pct': 0.18}
+=== 2026-11-11T17:53:19-05:00 cell 03: burst prefixsat:1:0.2 seed 1 atespace cell-03
+g-gke8,burst,prefixsat:1:0.2,1,cell-03,7,0,14,0,yes,0,1794437725,1794438071
+g-gke8,burst,prefixsat:1:0.2,1,577.0000,577.0000,0.0000,0.0000,0.0000,0.0000,160.2898,209.0720,767.1216,2.7102,2.2797,0.4191,1.2255,0.0945,NaN,NaN,NaN,NaN,NaN,NaN,6.0000,7.0000,28.0000,22.0000
+{'scenario': 'g-gke8', 'pattern': 'burst', 'policy': 'prefixsat:1:0.2', 'seed': '1', 'atespace': 'cell-03', 't_start': '1794437725', 't_end': '1794438071', 'bind_p50_ms': 7.97, 'bind_p99_ms': 24.21, 'restore_p50_ms': 77.26, 'restore_p99_ms': 247.28, 'restore_local_p99_ms': 167.5, 'restore_latest_p99_ms': 407.5, 'restores': 578.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 0.84, 'node_psi_cpu_mean_pct': 0.36, 'pod_psi_cpu_max_pct': 0.25}
+=== 2026-11-11T18:01:18-05:00 cell 04: ramp-down prefixsat:1:0.2 seed 1 atespace cell-04
+g-gke8,ramp-down,prefixsat:1:0.2,1,cell-04,12,0,29,0,yes,0,1794438132,1794439446
+g-gke8,ramp-down,prefixsat:1:0.2,1,1816.0000,1816.0000,0.0000,0.0000,0.0000,0.0000,161.6165,185.0120,513.3468,4.0513,2.9306,0.3480,1.3011,0.0907,NaN,3.4085,0.0000,0.0000,1.0000,5.0000,5.0000,6.0000,24.0000,18.0000
+{'scenario': 'g-gke8', 'pattern': 'ramp-down', 'policy': 'prefixsat:1:0.2', 'seed': '1', 'atespace': 'cell-04', 't_start': '1794438132', 't_end': '1794439446', 'bind_p50_ms': 8.46, 'bind_p99_ms': 24.55, 'restore_p50_ms': 75.71, 'restore_p99_ms': 208.51, 'restore_local_p99_ms': 99.98, 'restore_latest_p99_ms': 387.92, 'restores': 1817.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 1.1, 'node_psi_cpu_mean_pct': 0.35, 'pod_psi_cpu_max_pct': 0.19}
+=== 2026-11-11T18:24:14-05:00 cell 05: ramp-down bestofd:3 seed 1 atespace cell-05
+g-gke8,ramp-down,bestofd:3,1,cell-05,7,0,77,0,yes,0,1794439598,1794440873
+g-gke8,ramp-down,bestofd:3,1,1747.0000,1747.0000,0.0000,0.0000,0.0000,0.0000,161.6937,222.7668,706.3282,4.0690,2.4016,0.4806,1.5776,0.1516,NaN,2.5310,0.0000,5.0000,7.0000,15.0000,15.0000,6.0000,33.0000,7.0000
+{'scenario': 'g-gke8', 'pattern': 'ramp-down', 'policy': 'bestofd:3', 'seed': '1', 'atespace': 'cell-05', 't_start': '1794439598', 't_end': '1794440873', 'bind_p50_ms': 8.48, 'bind_p99_ms': 24.61, 'restore_p50_ms': 76.36, 'restore_p99_ms': 243.13, 'restore_local_p99_ms': 99.95, 'restore_latest_p99_ms': 4858.33, 'restores': 1748.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 1.14, 'node_psi_cpu_mean_pct': 0.34, 'pod_psi_cpu_max_pct': 0.25}
+=== 2026-11-11T18:48:00-05:00 cell 06: burst bestofd:3 seed 1 atespace cell-06
+g-gke8,burst,bestofd:3,1,cell-06,7,0,14,0,yes,0,1794440937,1794441279
+g-gke8,burst,bestofd:3,1,574.0000,574.0000,2.0000,2.0000,0.0000,0.0000,164.5075,264.8611,742.3072,2.6614,2.2737,0.4739,1.2465,0.1297,NaN,NaN,NaN,NaN,NaN,NaN,14.0000,6.0000,19.0000,9.0000
+{'scenario': 'g-gke8', 'pattern': 'burst', 'policy': 'bestofd:3', 'seed': '1', 'atespace': 'cell-06', 't_start': '1794440937', 't_end': '1794441279', 'bind_p50_ms': 9.44, 'bind_p99_ms': 24.66, 'restore_p50_ms': 78.35, 'restore_p99_ms': 340.28, 'restore_local_p99_ms': 234.8, 'restore_latest_p99_ms': 421.25, 'restores': 575.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 1.14, 'node_psi_cpu_mean_pct': 0.38, 'pod_psi_cpu_max_pct': 0.48}
+=== 2026-11-11T18:54:46-05:00 cell 07: burst prefixsat:1:0.2 seed 2 atespace cell-07
+g-gke8,burst,prefixsat:1:0.2,2,cell-07,3,0,17,0,yes,0,1794441414,1794441757
+g-gke8,burst,prefixsat:1:0.2,2,573.0000,573.0000,0.0000,0.0000,0.0000,0.0000,163.6700,205.6581,524.0793,2.8394,2.5259,0.3725,1.0874,0.0968,NaN,NaN,NaN,NaN,NaN,NaN,7.0000,7.0000,23.0000,17.0000
+{'scenario': 'g-gke8', 'pattern': 'burst', 'policy': 'prefixsat:1:0.2', 'seed': '2', 'atespace': 'cell-07', 't_start': '1794441414', 't_end': '1794441757', 'bind_p50_ms': 8.37, 'bind_p99_ms': 24.62, 'restore_p50_ms': 76.67, 'restore_p99_ms': 233.5, 'restore_local_p99_ms': 180.57, 'restore_latest_p99_ms': 247.22, 'restores': 574.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 0.95, 'node_psi_cpu_mean_pct': 0.35, 'pod_psi_cpu_max_pct': 0.26}
+=== 2026-11-11T19:02:44-05:00 cell 08: burst p2c seed 2 atespace cell-08
+g-gke8,burst,p2c,2,cell-08,0,0,0,0,yes,0,1794441899,1794442241
+g-gke8,burst,p2c,2,585.0000,585.0000,0.0000,0.0000,0.0000,0.0000,160.8835,186.8334,224.4885,3.9325,3.5793,0.1200,0.5942,0.0130,NaN,NaN,NaN,NaN,NaN,NaN,1.0000,8.0000,32.0000,28.0000
+{'scenario': 'g-gke8', 'pattern': 'burst', 'policy': 'p2c', 'seed': '2', 'atespace': 'cell-08', 't_start': '1794441899', 't_end': '1794442241', 'bind_p50_ms': 8.48, 'bind_p99_ms': 24.47, 'restore_p50_ms': 75.43, 'restore_p99_ms': 162.1, 'restore_local_p99_ms': 143.5, 'restore_latest_p99_ms': 180.7, 'restores': 586.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 0.98, 'node_psi_cpu_mean_pct': 0.36, 'pod_psi_cpu_max_pct': 0.17}
+=== 2026-11-11T19:10:49-05:00 cell 09: ramp-down p2c seed 2 atespace cell-09
+g-gke8,ramp-down,p2c,2,cell-09,7,0,68,0,yes,0,1794442308,1794443585
+g-gke8,ramp-down,p2c,2,1803.0000,1803.0000,5.0000,5.0000,0.0000,0.0000,163.0785,191.8448,554.0649,4.0320,3.1566,0.2802,0.9236,0.0526,NaN,3.2750,0.0000,2.0000,0.0000,2.0000,2.0000,7.0000,33.0000,25.0000
+{'scenario': 'g-gke8', 'pattern': 'ramp-down', 'policy': 'p2c', 'seed': '2', 'atespace': 'cell-09', 't_start': '1794442308', 't_end': '1794443585', 'bind_p50_ms': nan, 'bind_p99_ms': nan, 'restore_p50_ms': nan, 'restore_p99_ms': nan, 'restore_local_p99_ms': nan, 'restore_latest_p99_ms': nan, 'restores': nan, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 1.25, 'node_psi_cpu_mean_pct': 0.4, 'pod_psi_cpu_max_pct': nan}
+=== 2026-11-11T19:33:14-05:00 cell 10: ramp-down prefixsat:1:0.2 seed 2 atespace cell-10
+setup failed for cell 10
+=== 2026-11-11T19:48:34-05:00 cell 11: burst bestofd:3 seed 2 atespace cell-11
+g-gke8,burst,bestofd:3,2,cell-11,5,0,11,0,yes,0,1794444645,1794444993
+g-gke8,burst,bestofd:3,2,577.0000,577.0000,0.0000,0.0000,0.0000,0.0000,160.0959,199.0488,771.6747,2.5293,2.1915,0.4706,1.2865,0.1298,NaN,NaN,NaN,NaN,NaN,NaN,14.0000,6.0000,19.0000,6.0000
+{'scenario': 'g-gke8', 'pattern': 'burst', 'policy': 'bestofd:3', 'seed': '2', 'atespace': 'cell-11', 't_start': '1794444645', 't_end': '1794444993', 'bind_p50_ms': 7.89, 'bind_p99_ms': 23.89, 'restore_p50_ms': 76.23, 'restore_p99_ms': 263.75, 'restore_local_p99_ms': 167.25, 'restore_latest_p99_ms': 470.63, 'restores': 578.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 0.7, 'node_psi_cpu_mean_pct': 0.35, 'pod_psi_cpu_max_pct': 0.22}
+=== 2026-11-11T19:56:41-05:00 cell 12: ramp-down bestofd:3 seed 2 atespace cell-12
+g-gke8,ramp-down,bestofd:3,2,cell-12,7,0,21,0,yes,0,1794445049,1794446386
+g-gke8,ramp-down,bestofd:3,2,1757.0000,1757.0000,0.0000,0.0000,0.0000,0.0000,161.6420,185.4073,537.2746,3.0889,2.1248,0.4665,1.6404,0.1689,NaN,2.1503,0.0000,6.0000,5.0000,13.0000,13.0000,9.0000,40.0000,3.0000
+{'scenario': 'g-gke8', 'pattern': 'ramp-down', 'policy': 'bestofd:3', 'seed': '2', 'atespace': 'cell-12', 't_start': '1794445049', 't_end': '1794446386', 'bind_p50_ms': 8.58, 'bind_p99_ms': 24.58, 'restore_p50_ms': 75.45, 'restore_p99_ms': 195.86, 'restore_local_p99_ms': 99.83, 'restore_latest_p99_ms': 434.75, 'restores': 1758.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 1.16, 'node_psi_cpu_mean_pct': 0.34, 'pod_psi_cpu_max_pct': 0.17}
+=== 2026-11-11T20:19:54-05:00 phase B done
+=== 2026-11-11T20:22:03-05:00 g-gke8 cell 13: ramp-down prefixsat:1:0.2 seed 2 atespace cell-13
+g-gke8,ramp-down,prefixsat:1:0.2,2,cell-13,4,0,30,0,yes,0,1794446650,1794447924
+g-gke8,ramp-down,prefixsat:1:0.2,2,1773.0000,1773.0000,0.0000,0.0000,0.0000,0.0000,161.5871,187.6248,552.2751,4.2868,3.2305,0.3409,1.0046,0.0911,NaN,2.8876,0.0000,1.0000,4.0000,8.0000,8.0000,5.0000,25.0000,18.0000
+{'scenario': 'g-gke8', 'pattern': 'ramp-down', 'policy': 'prefixsat:1:0.2', 'seed': '2', 'atespace': 'cell-13', 't_start': '1794446650', 't_end': '1794447924', 'bind_p50_ms': 8.34, 'bind_p99_ms': 24.53, 'restore_p50_ms': 75.61, 'restore_p99_ms': 255.91, 'restore_local_p99_ms': 99.73, 'restore_latest_p99_ms': 24600.0, 'restores': 1774.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 0.98, 'node_psi_cpu_mean_pct': 0.34, 'pod_psi_cpu_max_pct': 0.2}
+=== 2026-11-11T20:45:32-05:00 g-gke8 cell 14: burst prefixsat:1:0.2 seed 3 atespace cell-14
+g-gke8,burst,prefixsat:1:0.2,3,cell-14,6,0,16,0,yes,0,1794447987,1794448331
+g-gke8,burst,prefixsat:1:0.2,3,544.0000,544.0000,0.0000,0.0000,0.0000,0.0000,161.8505,204.8251,559.9308,2.6570,2.2409,0.4465,1.3083,0.0877,NaN,NaN,NaN,NaN,NaN,NaN,6.0000,7.0000,22.0000,16.0000
+{'scenario': 'g-gke8', 'pattern': 'burst', 'policy': 'prefixsat:1:0.2', 'seed': '3', 'atespace': 'cell-14', 't_start': '1794447987', 't_end': '1794448331', 'bind_p50_ms': 8.94, 'bind_p99_ms': 24.74, 'restore_p50_ms': 77.09, 'restore_p99_ms': 237.06, 'restore_local_p99_ms': 194.12, 'restore_latest_p99_ms': 247.8, 'restores': 545.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 0.82, 'node_psi_cpu_mean_pct': 0.34, 'pod_psi_cpu_max_pct': 0.21}
+=== 2026-11-11T20:52:19-05:00 g-gke8 cell 15: ramp-down p2c seed 3 atespace cell-15
+g-gke8,ramp-down,p2c,3,cell-15,1,0,17,0,yes,0,1794448466,1794449768
+g-gke8,ramp-down,p2c,3,1736.0000,1736.0000,0.0000,0.0000,0.0000,0.0000,161.5462,183.7865,248.2462,4.0822,3.2999,0.2642,0.8879,0.0320,NaN,3.1720,0.0000,0.0000,1.0000,1.0000,1.0000,7.0000,37.0000,27.0000
+{'scenario': 'g-gke8', 'pattern': 'ramp-down', 'policy': 'p2c', 'seed': '3', 'atespace': 'cell-15', 't_start': '1794448466', 't_end': '1794449768', 'bind_p50_ms': 8.54, 'bind_p99_ms': 24.55, 'restore_p50_ms': 75.48, 'restore_p99_ms': 175.63, 'restore_local_p99_ms': 99.94, 'restore_latest_p99_ms': 245.25, 'restores': 1737.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 0.97, 'node_psi_cpu_mean_pct': 0.35, 'pod_psi_cpu_max_pct': 0.17}
+=== 2026-11-11T21:16:16-05:00 g-gke8 cell 16: burst bestofd:3 seed 3 atespace cell-16
+g-gke8,burst,bestofd:3,3,cell-16,8,0,12,0,yes,0,1794449906,1794450252
+g-gke8,burst,bestofd:3,3,553.0000,550.0000,0.0000,0.0000,0.0000,3.0000,160.3254,197.8101,20783.9114,2.7104,2.3696,0.4737,1.2559,0.1377,NaN,NaN,NaN,NaN,NaN,NaN,12.0000,7.0000,34.0000,8.0000
+{'scenario': 'g-gke8', 'pattern': 'burst', 'policy': 'bestofd:3', 'seed': '3', 'atespace': 'cell-16', 't_start': '1794449906', 't_end': '1794450252', 'bind_p50_ms': 8.24, 'bind_p99_ms': 24.46, 'restore_p50_ms': 76.23, 'restore_p99_ms': 807.5, 'restore_local_p99_ms': 99.83, 'restore_latest_p99_ms': 816.25, 'restores': 554.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 0.92, 'node_psi_cpu_mean_pct': 0.34, 'pod_psi_cpu_max_pct': 0.3}
+=== 2026-11-11T21:24:19-05:00 g-gke8 cell 17: ramp-down prefixsat:1:0.2 seed 3 atespace cell-17
+g-gke8,ramp-down,prefixsat:1:0.2,3,cell-17,19,0,251,0,yes,0,1794450386,1794451722
+g-gke8,ramp-down,prefixsat:1:0.2,3,1858.0000,1858.0000,43.0000,22.0000,0.0000,0.0000,162.0650,517.2346,1547.8090,4.4798,3.0309,0.3009,1.1676,0.1293,NaN,2.7828,0.0000,0.0000,1.0000,2.0000,2.0000,8.0000,29.0000,21.0000
+{'scenario': 'g-gke8', 'pattern': 'ramp-down', 'policy': 'prefixsat:1:0.2', 'seed': '3', 'atespace': 'cell-17', 't_start': '1794450386', 't_end': '1794451722', 'bind_p50_ms': 8.27, 'bind_p99_ms': 24.39, 'restore_p50_ms': 79.27, 'restore_p99_ms': 362.02, 'restore_local_p99_ms': 99.86, 'restore_latest_p99_ms': 649.29, 'restores': 1859.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 0.96, 'node_psi_cpu_mean_pct': 0.36, 'pod_psi_cpu_max_pct': 0.21}
+=== 2026-11-11T21:48:50-05:00 phase B done
+=== 2026-11-12T00:52:58-05:00 g-gke8 cell 18: burst bestofd:3 seed 4 atespace cell-18
+g-gke8,burst,bestofd:3,4,cell-18,4,0,18,0,yes,0,1794462832,1794463175
+g-gke8,burst,bestofd:3,4,578.0000,578.0000,0.0000,0.0000,0.0000,0.0000,162.9513,223.3811,571.6471,2.3772,2.0316,0.4900,1.3116,0.1478,NaN,NaN,NaN,NaN,NaN,NaN,14.0000,7.0000,25.0000,4.0000
+{'scenario': 'g-gke8', 'pattern': 'burst', 'policy': 'bestofd:3', 'seed': '4', 'atespace': 'cell-18', 't_start': '1794462832', 't_end': '1794463175', 'bind_p50_ms': 9.4, 'bind_p99_ms': 26.05, 'restore_p50_ms': 76.91, 'restore_p99_ms': 242.74, 'restore_local_p99_ms': 188.31, 'restore_latest_p99_ms': 343.75, 'restores': 579.0, 'crashes_metric': nan, 'node_psi_cpu_max_pct': 0.86, 'node_psi_cpu_mean_pct': 0.35, 'pod_psi_cpu_max_pct': 0.24}
+=== 2026-11-12T00:59:44-05:00 phase B done

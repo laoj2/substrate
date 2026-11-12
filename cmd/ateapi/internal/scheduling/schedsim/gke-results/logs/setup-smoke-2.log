@@ -1,0 +1,39 @@
+target context: gke_gke-luizaoj-test-dev_us-west1-c_sched-exp
+namespace/benchmark-workloads unchanged
+workerpool.ate.dev "pool" deleted from benchmark-workloads namespace
+2026/11/11 17:13:14 Using base gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 for go.ate.dev/substrate/cmd/ateworker-gvisor
+2026/11/11 17:13:14 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 17:13:14 Building go.ate.dev/substrate/cmd/ateworker-gvisor for linux/amd64
+2026/11/11 17:13:18 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:latest
+2026/11/11 17:13:20 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962:sha256-35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece.sbom
+2026/11/11 17:13:20 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/ateworker-gvisor-6ba39372e3cc3b4b39febbff4256f962@sha256:35c2b471c504584d8f5a2dffbcd6c1a8d9cfbd5e4051c834553c376aa36c9ece
+workerpool.ate.dev/pool created
+workerpool.ate.dev/pool condition met
+2026/11/11 17:13:34 Using base gcr.io/distroless/static-debian13:latest@sha256:15f8637509792e05b97d83451b0b6ccfa4abd548f997e406ac1e72c87fe1fa78 for go.ate.dev/substrate/cmd/benchmarking/glutton
+2026/11/11 17:13:34 git is in a dirty state
+Please check in your pipeline what can be changing the following files:
+ M cmd/ateapi/internal/scheduling/schedsim/kind.go
+ M cmd/ateapi/internal/scheduling/schedsim/main.go
+?? cmd/ateapi/internal/scheduling/schedsim/gke-run-cell.sh
+?? cmd/ateapi/internal/scheduling/schedsim/gke-setup.sh
+?? instructions.md
+
+2026/11/11 17:13:34 Building go.ate.dev/substrate/cmd/benchmarking/glutton for linux/amd64
+2026/11/11 17:13:37 Publishing us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/glutton-4b3667ae99a537903d62dbe4a02d5524:latest
+2026/11/11 17:13:39 Published SBOM us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/glutton-4b3667ae99a537903d62dbe4a02d5524:sha256-417b6a927ba994a96a68296297341d052ce6beabaf9c19ace1eb208065b22f0d.sbom
+2026/11/11 17:13:39 Published us-west1-docker.pkg.dev/gke-luizaoj-test-dev/ate-images/glutton-4b3667ae99a537903d62dbe4a02d5524@sha256:417b6a927ba994a96a68296297341d052ce6beabaf9c19ace1eb208065b22f0d
+ATESPACE              NAME         GOLDEN TAG   ERROR   AGE
+benchmark-workloads   sched-250m                        0s
+2026/11/11 17:13:55 connected to 3 ate-api-server replicas
+2026/11/11 17:13:56 created 100/240
+2026/11/11 17:13:56 created 200/240
+2026/11/11 17:13:57 reset round 0: 0/240 actors not suspended
+2026/11/11 17:13:57 reset done: 24 workers, all empty
+setup done: scenario g-gke8, atespace smoke-2
