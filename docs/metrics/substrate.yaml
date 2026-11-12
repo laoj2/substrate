@@ -153,11 +153,14 @@ cardinality_rules:
     brief: >
       Each ate.* metric label has a list of permitted values, or it names an
       object that an operator made. The names of the templates and the pools
-      never come from a request. One exception: on
+      never come from a request. There are two exceptions. First, on
       atenet.router.route.duration, ate.template.atespace and ate.template.name
       hold the literal "unknown" when the router has no template to name. The
       router sends that constant in place of the empty string. It does not send
       a value that the request gave.
+      Second, the ate.worker.* resource instruments carry ate.worker.name,
+      ate.worker.pod.name and ate.worker.node.name. Kubernetes makes those
+      names, and their number grows with the fleet, not with the actors.
     enforced: false
     could_be_enforced_by: >
       A Weaver Rego policy can make each ate.* attribute of type string give a

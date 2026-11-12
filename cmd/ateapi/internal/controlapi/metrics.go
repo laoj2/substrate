@@ -16,11 +16,13 @@ package controlapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"go.ate.dev/substrate/api/ateapi/v1"
 	atev1 "go.ate.dev/substrate/api/infra/k8s/ate/v1"
+	"go.ate.dev/substrate/cmd/ateapi/internal/scheduling"
 	"go.ate.dev/substrate/internal/apierror"
 	"go.ate.dev/substrate/internal/ateattr"
 	"go.ate.dev/substrate/internal/hardware"
@@ -30,10 +32,16 @@ import (
 )
 
 const (
-	workerpoolWorkersMetric   = "ate.workerpool.workers"
-	lifecycleOpDurationMetric = "ate.actor.lifecycle.operation.duration"
-	schedulerAssignmentMetric = "ate.scheduler.assignment.duration"
-	actorCrashesMetric        = "ate.actor.crashes"
+	workerpoolWorkersMetric     = "ate.workerpool.workers"
+	workerCPUCapacityMetric     = "ate.worker.cpu.capacity"
+	workerCPUAllocatedMetric    = "ate.worker.cpu.allocated"
+	workerMemoryCapacityMetric  = "ate.worker.memory.capacity"
+	workerMemoryAllocatedMetric = "ate.worker.memory.allocated"
+	workerActorsCapacityMetric  = "ate.worker.actors.capacity"
+	workerActorsAllocatedMetric = "ate.worker.actors.allocated"
+	lifecycleOpDurationMetric   = "ate.actor.lifecycle.operation.duration"
+	schedulerAssignmentMetric   = "ate.scheduler.assignment.duration"
+	actorCrashesMetric          = "ate.actor.crashes"
 )
 
 var actorCrashesCounter metric.Int64Counter
@@ -144,6 +152,85 @@ func workerState(w *ateapi.Worker) string {
 	default:
 		return ateattr.WorkerStateAtCapacity
 	}
+}
+
+// RegisterWorkerResources wires the per-worker capacity and allocated
+// instruments for CPU, memory and actors against workers
+// (workercache.Cache.Workers in prod). Allocated is the sum of the limits of
+// the actors on a worker, not their usage, and every worker reports it. Only a
+// worker the scheduler can place on reports capacity, and only for a resource
+// it reports. Thus a draining or new worker never reads as free room.
+func RegisterWorkerResources(meter metric.Meter, workers func() ([]*ateapi.Worker, error)) error {
+	var errs []error
+	floatCounter := func(name, unit, description string) metric.Float64ObservableUpDownCounter {
+		c, err := meter.Float64ObservableUpDownCounter(name, metric.WithUnit(unit), metric.WithDescription(description))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("create %s updowncounter: %w", name, err))
+		}
+		return c
+	}
+	intCounter := func(name, unit, description string) metric.Int64ObservableUpDownCounter {
+		c, err := meter.Int64ObservableUpDownCounter(name, metric.WithUnit(unit), metric.WithDescription(description))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("create %s updowncounter: %w", name, err))
+		}
+		return c
+	}
+	cpuCapacity := floatCounter(workerCPUCapacityMetric, "{cpu}", "CPU cores of a worker that actors can book.")
+	cpuAllocated := floatCounter(workerCPUAllocatedMetric, "{cpu}", "CPU cores that the actors on a worker book.")
+	memoryCapacity := intCounter(workerMemoryCapacityMetric, "By", "Memory of a worker that actors can book.")
+	memoryAllocated := intCounter(workerMemoryAllocatedMetric, "By", "Memory that the actors on a worker book.")
+	actorsCapacity := intCounter(workerActorsCapacityMetric, "{actor}", "Most actors a worker can hold.")
+	actorsAllocated := intCounter(workerActorsAllocatedMetric, "{actor}", "Actors on a worker.")
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+
+	_, err := meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		ws, err := workers()
+		if err != nil {
+			// Worker cache unavailable (warmup/reconnect): skip the whole observation.
+			return nil
+		}
+		for _, w := range ws {
+			attrs := metric.WithAttributes(
+				ateattr.WorkerPoolNamespaceKey.String(w.GetWorkerNamespace()),
+				ateattr.WorkerPoolNameKey.String(w.GetWorkerPool()),
+				ateattr.WorkerNameKey.String(w.GetMetadata().GetName()),
+				ateattr.WorkerPodNameKey.String(w.GetWorkerPod()),
+				ateattr.WorkerNodeNameKey.String(w.GetNodeName()),
+			)
+			allocated := w.GetStatus().GetAllocated()
+			o.ObserveFloat64(cpuAllocated, cores(allocated.GetCpuMillicores()), attrs)
+			o.ObserveInt64(memoryAllocated, allocated.GetMemoryBytes(), attrs)
+			o.ObserveInt64(actorsAllocated, int64(allocated.GetActors()), attrs)
+			if !schedulable(w) {
+				continue
+			}
+			capacity := w.GetStatus().GetCapacity()
+			if c := capacity.GetCpuMillicores(); c > 0 {
+				o.ObserveFloat64(cpuCapacity, cores(c), attrs)
+			}
+			if c := capacity.GetMemoryBytes(); c > 0 {
+				o.ObserveInt64(memoryCapacity, c, attrs)
+			}
+			if c := capacity.GetActors(); c > 0 {
+				o.ObserveInt64(actorsCapacity, int64(c), attrs)
+			}
+		}
+		return nil
+	}, cpuCapacity, cpuAllocated, memoryCapacity, memoryAllocated, actorsCapacity, actorsAllocated)
+	if err != nil {
+		return fmt.Errorf("register worker resource callback: %w", err)
+	}
+	return nil
+}
+
+func cores(millicores int64) float64 { return float64(millicores) / 1000 }
+
+// schedulable reports whether the scheduler can place an actor on w.
+func schedulable(w *ateapi.Worker) bool {
+	return w.GetStatus().GetState() == ateapi.WorkerState_WORKER_STATE_ACTIVE && scheduling.Registered(w)
 }
 
 // Instruments holds ateapi's actor-lifecycle and scheduler duration histograms.

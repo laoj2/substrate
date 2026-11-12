@@ -584,3 +584,145 @@ func TestWorkerCountSumsToPool(t *testing.T) {
 		t.Errorf("sum over states = %d, want pool size %d", total, len(ws))
 	}
 }
+
+// poolWorker builds a registered ACTIVE worker of ns-1/pool-a.
+func poolWorker(capacity, allocated *ateapi.WorkerResources) *ateapi.Worker {
+	w := worker("ns-1", "pool-a", "gvisor", allocated.GetActors(), capacity.GetActors())
+	w.Status.RegisteredEpoch = 1
+	w.Status.Capacity = capacity
+	w.Status.Allocated = allocated
+	return w
+}
+
+// workerResourceValues collects the per-worker resource instruments by name,
+// and asserts that each series carries the identity of the one worker.
+func workerResourceValues(t *testing.T, workers func() ([]*ateapi.Worker, error)) map[string]float64 {
+	t.Helper()
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	if err := RegisterWorkerResources(mp.Meter("ateapi"), workers); err != nil {
+		t.Fatalf("RegisterWorkerResources: %v", err)
+	}
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	wantAttrs := attribute.NewSet(
+		ateattr.WorkerPoolNamespaceKey.String("ns-1"),
+		ateattr.WorkerPoolNameKey.String("pool-a"),
+		ateattr.WorkerNameKey.String("worker-1"),
+		ateattr.WorkerPodNameKey.String("pod-1"),
+		ateattr.WorkerNodeNameKey.String("node-1"),
+	)
+	got := make(map[string]float64)
+	check := func(name string, attrs attribute.Set, value float64) {
+		if !attrs.Equals(&wantAttrs) {
+			t.Errorf("%s attributes = %v, want %v", name, attrs.ToSlice(), wantAttrs.ToSlice())
+		}
+		got[name] = value
+	}
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			switch data := m.Data.(type) {
+			case metricdata.Sum[float64]:
+				for _, dp := range data.DataPoints {
+					check(m.Name, dp.Attributes, dp.Value)
+				}
+			case metricdata.Sum[int64]:
+				for _, dp := range data.DataPoints {
+					check(m.Name, dp.Attributes, float64(dp.Value))
+				}
+			default:
+				t.Errorf("%s data type = %T, want Sum", m.Name, m.Data)
+			}
+		}
+	}
+	return got
+}
+
+func TestWorkerResources(t *testing.T) {
+	const gib = 1 << 30
+	capacity := &ateapi.WorkerResources{Actors: 10, CpuMillicores: 4000, MemoryBytes: 8 * gib}
+	allocated := &ateapi.WorkerResources{Actors: 2, CpuMillicores: 1500, MemoryBytes: 2 * gib}
+	allAllocated := map[string]float64{
+		workerCPUAllocatedMetric:    1.5,
+		workerMemoryAllocatedMetric: 2 * gib,
+		workerActorsAllocatedMetric: 2,
+	}
+
+	tests := []struct {
+		name   string
+		worker func(w *ateapi.Worker)
+		err    error
+		want   map[string]float64
+	}{
+		{
+			name:   "a worker the scheduler can place on reports capacity and allocated",
+			worker: func(*ateapi.Worker) {},
+			want: map[string]float64{
+				workerCPUCapacityMetric:     4,
+				workerCPUAllocatedMetric:    1.5,
+				workerMemoryCapacityMetric:  8 * gib,
+				workerMemoryAllocatedMetric: 2 * gib,
+				workerActorsCapacityMetric:  10,
+				workerActorsAllocatedMetric: 2,
+			},
+		},
+		{
+			name: "a resource the worker does not report has no capacity series",
+			worker: func(w *ateapi.Worker) {
+				w.Status.Capacity = &ateapi.WorkerResources{Actors: 10}
+			},
+			want: map[string]float64{
+				workerCPUAllocatedMetric:    1.5,
+				workerMemoryAllocatedMetric: 2 * gib,
+				workerActorsCapacityMetric:  10,
+				workerActorsAllocatedMetric: 2,
+			},
+		},
+		{
+			name: "a draining worker reports allocated only",
+			worker: func(w *ateapi.Worker) {
+				w.Status.State = ateapi.WorkerState_WORKER_STATE_DRAINING
+			},
+			want: allAllocated,
+		},
+		{
+			name: "a worker that has not registered reports allocated only",
+			worker: func(w *ateapi.Worker) {
+				w.Status.RegisteredEpoch = 0
+			},
+			want: allAllocated,
+		},
+		{
+			name:   "nothing while the worker cache is not ready",
+			worker: func(*ateapi.Worker) {},
+			err:    context.DeadlineExceeded,
+			want:   map[string]float64{},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := poolWorker(capacity, allocated)
+			w.Metadata = &ateapi.ResourceMetadata{Name: "worker-1"}
+			w.WorkerPod = "pod-1"
+			w.NodeName = "node-1"
+			tc.worker(w)
+			workers := func() ([]*ateapi.Worker, error) {
+				if tc.err != nil {
+					return nil, tc.err
+				}
+				return []*ateapi.Worker{w}, nil
+			}
+			got := workerResourceValues(t, workers)
+			if len(got) != len(tc.want) {
+				t.Errorf("got series %v, want %v", got, tc.want)
+			}
+			for name, want := range tc.want {
+				if v, ok := got[name]; !ok || v != want {
+					t.Errorf("%s = %v (present=%v), want %v", name, v, ok, want)
+				}
+			}
+		})
+	}
+}

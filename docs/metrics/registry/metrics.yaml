@@ -242,6 +242,28 @@ groups:
               brief: >
                 The scheduler places no actor on the worker. It is not active,
                 or it has not reported an actor capacity yet.
+      - id: ate.worker.name
+        stability: development
+        type: string
+        brief: >
+          The name of the Worker in ateapi. Only the ate.worker.* resource
+          instruments carry it. The number of values grows with the fleet.
+        examples: [ate-demo-counter.counter-6d4f8b7c9-x2l5p]
+      - id: ate.worker.pod.name
+        stability: development
+        type: string
+        brief: >
+          The name of the pod of the worker. The key is not k8s.pod.name
+          because the resource of ateapi already holds that key for its own
+          pod.
+        examples: [counter-6d4f8b7c9-x2l5p]
+      - id: ate.worker.node.name
+        stability: development
+        type: string
+        brief: >
+          The name of the node of the worker. The key is not k8s.node.name for
+          the same reason as ate.worker.pod.name.
+        examples: [gke-ate-pool-1-a1b2c3d4-xyz0]
 
   - id: registry.ate.sandbox
     type: attribute_group
@@ -882,6 +904,211 @@ groups:
       - ref: ate.worker.state
         requirement_level: required
       - ref: ate.sandbox.class
+        requirement_level: required
+
+  - id: metric.ate.worker.cpu.capacity
+    type: metric
+    metric_name: ate.worker.cpu.capacity
+    instrument: updowncounter
+    unit: "{cpu}"
+    stability: development
+    brief: The CPU cores of a worker that actors can book.
+    note: >
+      ateapi reads this value with a callback. Each ateapi replica reports the
+      whole fleet from its own worker cache. Take the maximum across the
+      replicas by worker first, and add after that. The value is the CPU that
+      the worker reports. Only a worker that the scheduler can put an actor on
+      reports it. A draining worker, or one that has not registered with
+      WorkerService, has no series. Thus it never reads as free room. A worker
+      that reports no value for this resource has no series. The sum across
+      the workers of a pool is the capacity of the pool. That sum hides how
+      the free room splits among the workers. Ten workers with half a core
+      free each cannot fit a one-core actor.
+    annotations:
+      substrate:
+        emitted_by: [ateapi]
+        golden_signals: [saturation]
+        code_anchor: cmd/ateapi/internal/controlapi/metrics.go
+        cuj: How much CPU can each worker give to actors?
+    attributes:
+      - ref: ate.workerpool.namespace
+        requirement_level: required
+      - ref: ate.workerpool.name
+        requirement_level: required
+      - ref: ate.worker.name
+        requirement_level: required
+      - ref: ate.worker.pod.name
+        requirement_level: required
+      - ref: ate.worker.node.name
+        requirement_level: required
+
+  - id: metric.ate.worker.cpu.allocated
+    type: metric
+    metric_name: ate.worker.cpu.allocated
+    instrument: updowncounter
+    unit: "{cpu}"
+    stability: development
+    brief: The CPU cores that the actors on a worker book.
+    note: >
+      ateapi reads this value with a callback. Each ateapi replica reports the
+      whole fleet from its own worker cache. Take the maximum across the
+      replicas by worker first, and add after that. The value is the CPU that
+      the actors on the worker book: their limits plus the actor_overhead of
+      the runtime. It is not what they use. Every worker reports it, also a
+      worker without capacity. Thus the sum across a pool can go above the sum
+      of the capacity while a worker drains.
+    annotations:
+      substrate:
+        emitted_by: [ateapi]
+        golden_signals: [saturation]
+        code_anchor: cmd/ateapi/internal/controlapi/metrics.go
+        cuj: How much CPU do the actors on each worker book?
+    attributes:
+      - ref: ate.workerpool.namespace
+        requirement_level: required
+      - ref: ate.workerpool.name
+        requirement_level: required
+      - ref: ate.worker.name
+        requirement_level: required
+      - ref: ate.worker.pod.name
+        requirement_level: required
+      - ref: ate.worker.node.name
+        requirement_level: required
+
+  - id: metric.ate.worker.memory.capacity
+    type: metric
+    metric_name: ate.worker.memory.capacity
+    instrument: updowncounter
+    unit: "By"
+    stability: development
+    brief: The memory of a worker that actors can book.
+    note: >
+      ateapi reads this value with a callback. Each ateapi replica reports the
+      whole fleet from its own worker cache. Take the maximum across the
+      replicas by worker first, and add after that. The value is the memory
+      that the worker reports. Only a worker that the scheduler can put an
+      actor on reports it. A draining worker, or one that has not registered
+      with WorkerService, has no series. Thus it never reads as free room. A
+      worker that reports no value for this resource has no series. The sum
+      across the workers of a pool is the capacity of the pool. That sum hides
+      how the free room splits among the workers.
+    annotations:
+      substrate:
+        emitted_by: [ateapi]
+        golden_signals: [saturation]
+        code_anchor: cmd/ateapi/internal/controlapi/metrics.go
+        cuj: How much memory can each worker give to actors?
+    attributes:
+      - ref: ate.workerpool.namespace
+        requirement_level: required
+      - ref: ate.workerpool.name
+        requirement_level: required
+      - ref: ate.worker.name
+        requirement_level: required
+      - ref: ate.worker.pod.name
+        requirement_level: required
+      - ref: ate.worker.node.name
+        requirement_level: required
+
+  - id: metric.ate.worker.memory.allocated
+    type: metric
+    metric_name: ate.worker.memory.allocated
+    instrument: updowncounter
+    unit: "By"
+    stability: development
+    brief: The memory that the actors on a worker book.
+    note: >
+      ateapi reads this value with a callback. Each ateapi replica reports the
+      whole fleet from its own worker cache. Take the maximum across the
+      replicas by worker first, and add after that. The value is the memory
+      that the actors on the worker book: their limits plus the actor_overhead
+      of the runtime. It is not what they use. Every worker reports it, also a
+      worker without capacity. Thus the sum across a pool can go above the sum
+      of the capacity while a worker drains.
+    annotations:
+      substrate:
+        emitted_by: [ateapi]
+        golden_signals: [saturation]
+        code_anchor: cmd/ateapi/internal/controlapi/metrics.go
+        cuj: How much memory do the actors on each worker book?
+    attributes:
+      - ref: ate.workerpool.namespace
+        requirement_level: required
+      - ref: ate.workerpool.name
+        requirement_level: required
+      - ref: ate.worker.name
+        requirement_level: required
+      - ref: ate.worker.pod.name
+        requirement_level: required
+      - ref: ate.worker.node.name
+        requirement_level: required
+
+  - id: metric.ate.worker.actors.capacity
+    type: metric
+    metric_name: ate.worker.actors.capacity
+    instrument: updowncounter
+    unit: "{actor}"
+    stability: development
+    brief: The most actors that a worker can hold.
+    note: >
+      ateapi reads this value with a callback. Each ateapi replica reports the
+      whole fleet from its own worker cache. Take the maximum across the
+      replicas by worker first, and add after that. The value is the maximum
+      number of actors that the worker reports. It bounds costs that CPU and
+      memory do not count, such as file descriptors. It is an upper bound and
+      not a target. Only a worker that the scheduler can put an actor on
+      reports it. A draining worker, or one that has not registered with
+      WorkerService, has no series. Thus it never reads as free room. A worker
+      that reports no value for this resource has no series. The sum across
+      the workers of a pool is the capacity of the pool. That sum hides how
+      the free room splits among the workers.
+    annotations:
+      substrate:
+        emitted_by: [ateapi]
+        golden_signals: [saturation]
+        code_anchor: cmd/ateapi/internal/controlapi/metrics.go
+        cuj: How many actors can each worker hold at most?
+    attributes:
+      - ref: ate.workerpool.namespace
+        requirement_level: required
+      - ref: ate.workerpool.name
+        requirement_level: required
+      - ref: ate.worker.name
+        requirement_level: required
+      - ref: ate.worker.pod.name
+        requirement_level: required
+      - ref: ate.worker.node.name
+        requirement_level: required
+
+  - id: metric.ate.worker.actors.allocated
+    type: metric
+    metric_name: ate.worker.actors.allocated
+    instrument: updowncounter
+    unit: "{actor}"
+    stability: development
+    brief: The number of actors on a worker.
+    note: >
+      ateapi reads this value with a callback. Each ateapi replica reports the
+      whole fleet from its own worker cache. Take the maximum across the
+      replicas by worker first, and add after that. The value is the number of
+      actors that the worker holds. Every worker reports it, also a worker
+      without capacity.
+    annotations:
+      substrate:
+        emitted_by: [ateapi]
+        golden_signals: [saturation]
+        code_anchor: cmd/ateapi/internal/controlapi/metrics.go
+        cuj: How many actors are in operation on each worker?
+    attributes:
+      - ref: ate.workerpool.namespace
+        requirement_level: required
+      - ref: ate.workerpool.name
+        requirement_level: required
+      - ref: ate.worker.name
+        requirement_level: required
+      - ref: ate.worker.pod.name
+        requirement_level: required
+      - ref: ate.worker.node.name
         requirement_level: required
 
   - id: metric.ate.actor.lifecycle.operation.duration

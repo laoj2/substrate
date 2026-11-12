@@ -136,9 +136,10 @@ func ActorStateValue(state ateapi.ActorState) string {
 	}
 }
 
-// Metric-label keys: the only ate.* attributes allowed on metric datapoints,
-// each with a small bounded value set. High-cardinality identity (actor
-// name/uid, atespace) is absent by design; it belongs on spans and logs.
+// Metric-label keys: the ate.* attributes allowed on metric datapoints, each
+// with a small bounded value set. The worker identity keys below are the one
+// exception. High-cardinality identity (actor name/uid, atespace) is absent
+// by design; it belongs on spans and logs.
 // ActorOperationNameKey follows the registry's *.operation.name pattern
 // (db.operation.name, gen_ai.operation.name). WorkerStateKey stays worker-rooted
 // rather than nesting under the pool so it can grow siblings.
@@ -167,6 +168,16 @@ const (
 	RouterResumeKey        = attribute.Key("ate.router.resume")
 	RouterOutcomeKey       = attribute.Key("ate.router.outcome")
 	StatsSourceKey         = attribute.Key("ate.stats.source")
+)
+
+// Worker identity keys, only on the per-worker ate.worker.* resource
+// instruments. Their values grow with the fleet, not with the actors. The pod
+// and node keys sit under ate.worker because ateapi's own resource already
+// carries k8s.pod.name and k8s.node.name.
+const (
+	WorkerNameKey     = attribute.Key("ate.worker.name")
+	WorkerPodNameKey  = attribute.Key("ate.worker.pod.name")
+	WorkerNodeNameKey = attribute.Key("ate.worker.node.name")
 )
 
 // Keys of the actor usage record. Logs only: the measurements are unbounded and
