@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"go.ate.dev/substrate/api/ateapi/v1"
@@ -39,10 +40,16 @@ const (
 	workerMemoryAllocatedMetric = "ate.worker.memory.allocated"
 	workerActorsCapacityMetric  = "ate.worker.actors.capacity"
 	workerActorsAllocatedMetric = "ate.worker.actors.allocated"
+	workerpoolDemandMetric      = "ate.workerpool.demand"
 	lifecycleOpDurationMetric   = "ate.actor.lifecycle.operation.duration"
 	schedulerAssignmentMetric   = "ate.scheduler.assignment.duration"
 	actorCrashesMetric          = "ate.actor.crashes"
 )
+
+// waitingWindow is how long an actor counts as waiting after its resume found
+// no room. It has to outlast the gap between two resume retries of a parked
+// request, or the actor drops out of ate.workerpool.demand between them.
+const waitingWindow = 10 * time.Second
 
 var actorCrashesCounter metric.Int64Counter
 
@@ -233,13 +240,157 @@ func schedulable(w *ateapi.Worker) bool {
 	return w.GetStatus().GetState() == ateapi.WorkerState_WORKER_STATE_ACTIVE && scheduling.Registered(w)
 }
 
-// Instruments holds ateapi's actor-lifecycle and scheduler duration histograms.
-// A nil *Instruments is a valid no-op, so call sites need no guard. Worker-count
-// is registered separately (RegisterWorkerCount): a callback-driven observable,
-// not a synchronous instrument.
+// waitingActor is an actor whose latest resume found no room, with what it
+// would book in each pool it can run in.
+type waitingActor struct {
+	at       time.Time
+	bookings map[poolKey]*ateapi.Resources
+}
+
+// waitingActors holds the actors that wait for room, by actor UID.
+type waitingActors struct {
+	mu     sync.Mutex
+	actors map[string]waitingActor
+}
+
+func (w *waitingActors) add(uid string, actor waitingActor) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.actors[uid] = actor
+}
+
+func (w *waitingActors) remove(uid string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.actors, uid)
+}
+
+// since returns the actors that found no room at cutoff or later, and forgets
+// the rest.
+func (w *waitingActors) since(cutoff time.Time) []waitingActor {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	var out []waitingActor
+	for uid, actor := range w.actors {
+		if actor.at.Before(cutoff) {
+			delete(w.actors, uid)
+			continue
+		}
+		out = append(out, actor)
+	}
+	return out
+}
+
+type poolKey struct{ namespace, name string }
+
+// poolDemand returns the workers that the booked and the waiting actors of
+// each pool fill. Bookings count on every worker of the pool, like
+// ate.worker.*.allocated. Capacity and the number of workers count only the
+// workers the scheduler can place on, like ate.worker.*.capacity. A waiting
+// actor found room on no worker, so while one waits the pool counts as full
+// and the waiting actors fill new workers. A pool with no such worker has no
+// demand to report.
+func poolDemand(workers []*ateapi.Worker, waiting []waitingActor) map[poolKey]float64 {
+	// Each array holds actors, CPU millicores and memory bytes.
+	type sums struct {
+		workers                   float64
+		capacity, booked, waiting [3]float64
+	}
+	byPool := make(map[poolKey]*sums)
+	for _, w := range workers {
+		key := poolKey{w.GetWorkerNamespace(), w.GetWorkerPool()}
+		s := byPool[key]
+		if s == nil {
+			s = &sums{}
+			byPool[key] = s
+		}
+		booked := w.GetStatus().GetAllocated()
+		s.booked[0] += float64(booked.GetActors())
+		s.booked[1] += float64(booked.GetCpuMillicores())
+		s.booked[2] += float64(booked.GetMemoryBytes())
+		if !schedulable(w) {
+			continue
+		}
+		s.workers++
+		capacity := w.GetStatus().GetCapacity()
+		s.capacity[0] += float64(capacity.GetActors())
+		s.capacity[1] += float64(capacity.GetCpuMillicores())
+		s.capacity[2] += float64(capacity.GetMemoryBytes())
+	}
+	for _, actor := range waiting {
+		for key, booking := range actor.bookings {
+			s := byPool[key]
+			if s == nil {
+				continue
+			}
+			s.waiting[0]++
+			s.waiting[1] += float64(booking.GetCpuMillicores())
+			s.waiting[2] += float64(booking.GetMemoryBytes())
+		}
+	}
+	demand := make(map[poolKey]float64, len(byPool))
+	for key, s := range byPool {
+		if s.workers == 0 {
+			continue
+		}
+		var d float64
+		for i, capacity := range s.capacity {
+			// A resource the workers do not report is unconstrained.
+			if capacity <= 0 {
+				continue
+			}
+			booked := s.booked[i]
+			if s.waiting[0] > 0 {
+				booked = max(booked, capacity)
+			}
+			d = max(d, (booked+s.waiting[i])/capacity*s.workers)
+		}
+		demand[key] = d
+	}
+	return demand
+}
+
+// RegisterWorkerPoolDemand wires the ate.workerpool.demand gauge against
+// workers (workercache.Cache.Workers in prod) and the actors that instruments
+// saw find no room.
+func RegisterWorkerPoolDemand(meter metric.Meter, workers func() ([]*ateapi.Worker, error), instruments *Instruments) error {
+	demand, err := meter.Float64ObservableGauge(
+		workerpoolDemandMetric,
+		metric.WithUnit("{worker}"),
+		metric.WithDescription("Number of workers that the booked actors of a pool and the actors that wait for room in it fill."),
+	)
+	if err != nil {
+		return fmt.Errorf("create %s gauge: %w", workerpoolDemandMetric, err)
+	}
+
+	_, err = meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		ws, err := workers()
+		if err != nil {
+			// Worker cache unavailable (warmup/reconnect): skip the whole observation.
+			return nil
+		}
+		cutoff := time.Now().Add(-waitingWindow)
+		for key, d := range poolDemand(ws, instruments.waiting.since(cutoff)) {
+			o.ObserveFloat64(demand, d, metric.WithAttributes(ateattr.WorkerPoolAttributes(key.namespace, key.name)...))
+		}
+		return nil
+	}, demand)
+	if err != nil {
+		return fmt.Errorf("register %s callback: %w", workerpoolDemandMetric, err)
+	}
+	return nil
+}
+
+// Instruments holds ateapi's actor-lifecycle and scheduler duration
+// histograms, and the actors that wait for room. A nil *Instruments is a valid
+// no-op, so call sites need no guard. The observables are registered
+// separately (RegisterWorkerCount, RegisterWorkerResources,
+// RegisterWorkerPoolDemand): they are callback-driven, not synchronous
+// instruments.
 type Instruments struct {
 	lifecycleOpDuration         metric.Float64Histogram
 	schedulerAssignmentDuration metric.Float64Histogram
+	waiting                     waitingActors
 }
 
 // NewInstruments builds the two histograms against meter. Assignment buckets are
@@ -269,7 +420,27 @@ func NewInstruments(meter metric.Meter) (*Instruments, error) {
 	return &Instruments{
 		lifecycleOpDuration:         lifecycleOpDuration,
 		schedulerAssignmentDuration: schedulerAssignmentDuration,
+		waiting:                     waitingActors{actors: make(map[string]waitingActor)},
 	}, nil
+}
+
+// recordWaiting counts the actor toward ate.workerpool.demand of each pool in
+// bookings until waitingWindow passes or clearWaiting is called. bookings
+// holds what the actor takes from a worker of each pool.
+func (i *Instruments) recordWaiting(actorUID string, bookings map[poolKey]*ateapi.Resources) {
+	if i == nil {
+		return
+	}
+	i.waiting.add(actorUID, waitingActor{at: time.Now(), bookings: bookings})
+}
+
+// clearWaiting stops counting an actor that got a worker, or that a new
+// worker would not help.
+func (i *Instruments) clearWaiting(actorUID string) {
+	if i == nil {
+		return
+	}
+	i.waiting.remove(actorUID)
 }
 
 // recordLifecycleOp records op's duration. A non-nil err is classified onto

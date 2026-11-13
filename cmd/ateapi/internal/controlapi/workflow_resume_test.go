@@ -2391,6 +2391,65 @@ func TestEnsureWorkerAssigned_ExhaustedBackoffRecordsOneError(t *testing.T) {
 	}
 }
 
+// workflowDemand reads ate.workerpool.demand by pool name.
+func workflowDemand(t *testing.T, w *ActorWorkflow) map[string]float64 {
+	t.Helper()
+	reader := newPoolDemandReader(t, w.workerCache.Workers, w.instruments)
+	m := mustMetric(t, reader, workerpoolDemandMetric)
+	gauge, ok := m.Data.(metricdata.Gauge[float64])
+	if !ok {
+		t.Fatalf("%s data type = %T, want Gauge[float64]", workerpoolDemandMetric, m.Data)
+	}
+	demand := make(map[string]float64, len(gauge.DataPoints))
+	for _, dp := range gauge.DataPoints {
+		pool, _ := dp.Attributes.Value(ateattr.WorkerPoolNameKey)
+		demand[pool.AsString()] = dp.Value
+	}
+	return demand
+}
+
+// A resume that finds no room is demand the pools cannot hold, so
+// ate.workerpool.demand has to pass the size of every pool the actor can run
+// in.
+func TestAssignWorkerAttempt_NoRoomCountsTowardDemand(t *testing.T) {
+	full := contendedWorker("full-pod")
+	full.Status.Allocated = &ateapi.WorkerResources{Actors: 1}
+	otherPool := contendedWorker("other-pod")
+	otherPool.WorkerPool = "other-pool"
+	otherPool.Status.Allocated = &ateapi.WorkerResources{Actors: 1}
+	sched := &filledUpScheduler{workers: []*ateapi.Worker{full, otherPool}}
+	w, actor, _ := newContendedWorkflow(t, sched)
+	w.scheduler = scheduling.New(w.workerCache)
+
+	_, _, err := w.assignWorkerAttempt(context.Background(), resources.ActorRef{Atespace: "team-a", Name: "id1"}, actor, &ateapi.ActorTemplate{})
+	if got := apierror.Code(err); got != codes.ResourceExhausted {
+		t.Fatalf("assignWorkerAttempt error = %v, want ResourceExhausted", err)
+	}
+	want := map[string]float64{"pool": 2, "other-pool": 2}
+	if diff := cmp.Diff(want, workflowDemand(t, w)); diff != "" {
+		t.Errorf("%s mismatch (-want +got), one worker booked and one more for the waiting actor in each pool:\n%s", workerpoolDemandMetric, diff)
+	}
+}
+
+// An actor that got a worker is booked on it, so counting it as waiting too
+// would count it twice.
+func TestEnsureWorkerAssigned_AssignedActorStopsWaiting(t *testing.T) {
+	sched := &filledUpScheduler{workers: []*ateapi.Worker{contendedWorker("free-pod")}}
+	w, actor, _ := newContendedWorkflow(t, sched)
+	w.instruments.recordWaiting(actor.GetMetadata().GetUid(), map[poolKey]*ateapi.Resources{{"worker-ns", "pool"}: {}})
+	if got := workflowDemand(t, w)["pool"]; got != 2 {
+		t.Fatalf("%s before the resume = %v, want 2: the worker and one more for the waiting actor", workerpoolDemandMetric, got)
+	}
+
+	if _, _, err := w.ensureWorkerAssigned(context.Background(), resources.ActorRef{Atespace: "team-a", Name: "id1"}, actor, &ateapi.ActorTemplate{}); err != nil {
+		t.Fatalf("ensureWorkerAssigned: %v", err)
+	}
+	// The cache is static and still shows the worker empty.
+	if got := workflowDemand(t, w)["pool"]; got != 0 {
+		t.Errorf("%s after the resume = %v, want 0", workerpoolDemandMetric, got)
+	}
+}
+
 // replayBackoff returns how many attempts wait.ExponentialBackoff makes with
 // b, and the shortest sleep it makes after the last attempt before it gives
 // up. It replays the steps of ExponentialBackoff without jitter.

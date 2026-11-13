@@ -1111,6 +1111,50 @@ groups:
       - ref: ate.worker.node.name
         requirement_level: required
 
+  - id: metric.ate.workerpool.demand
+    type: metric
+    metric_name: ate.workerpool.demand
+    instrument: gauge
+    unit: "{worker}"
+    stability: development
+    brief: The number of workers that the booked actors of a pool and the actors that wait for room fill.
+    note: >
+      ateapi reads this value with a callback. The value is the number of
+      workers that the scheduler can put an actor on, times the largest of
+      three fractions: the booked actors, CPU and memory, with the actors that
+      wait for room added, each divided by the capacity of those workers.
+      Bookings count on every worker of the pool, like ate.worker.*.allocated,
+      and capacity counts like ate.worker.*.capacity. A resource that the
+      workers do not report does not count. Thus the value can be a fraction.
+      A waiting actor found room on no worker. Thus while an actor waits, the
+      booked fractions count as at least 1, and the value goes above the size
+      of the pool. This holds also when the pool has room in total but no
+      single worker has room for the actor. An actor waits from
+      the time a resume finds no room until it gets a worker, or for 10
+      seconds. A client that tries again keeps the actor in the count. An
+      actor on a full node does not wait when another node has room and the
+      move to that node fails. An
+      actor that can run in more than one pool counts in each of those pools.
+      Thus an autoscaler on each pool adds workers for the same actor, and
+      the pools together grow more than the actor needs. A pool with no
+      worker that the scheduler can put an actor on reports no value. Each ateapi replica reports the bookings of
+      the whole fleet, but only the actors that waited on that replica. Take
+      the maximum across the replicas. A sum counts each booking once for each
+      replica. The maximum can be too low when the tries of one actor reach
+      different replicas. It can be too high for up to 10 seconds when
+      another replica places an actor that waited on this one.
+    annotations:
+      substrate:
+        emitted_by: [ateapi]
+        golden_signals: [saturation]
+        code_anchor: cmd/ateapi/internal/controlapi/metrics.go
+        cuj: How many workers does the pool need to hold the actors that want to run?
+    attributes:
+      - ref: ate.workerpool.namespace
+        requirement_level: required
+      - ref: ate.workerpool.name
+        requirement_level: required
+
   - id: metric.ate.actor.lifecycle.operation.duration
     type: metric
     metric_name: ate.actor.lifecycle.operation.duration

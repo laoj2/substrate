@@ -243,6 +243,14 @@ demo is its own package registering itself from `init`, and
 `internal/demos/all` is the single list of what gets linked in — with a test
 asserting no demo package is missing from it.
 
+**Kind-only demos are visible but refuse.** `demo-autoscaled-workerpool` ships
+a prometheus-adapter for the Kind install's Prometheus. The cobra tree is built
+before flags are parsed, so `--kind` is not known yet: the subcommand always
+exists, and on another install it fails at run time with
+`demo-autoscaled-workerpool is only supported for Kind installations; re-run
+with --kind`. `delete all` runs its delete on every install, and there it
+leaves the cluster's external metrics APIService alone.
+
 **Template expansion is not sed.** The demo templates were expanded by a stack
 of `sed -e` expressions doing two things: substitute `${PLACEHOLDER}`, or delete
 the whole line (`/${NAME}/d`) when the placeholder is not in play.

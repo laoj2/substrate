@@ -568,6 +568,41 @@ func TestResumeActor_DetachesFromFullNode(t *testing.T) {
 	}
 }
 
+// TestResumeActor_FailedDetachStopsWaiting resumes an actor pinned to a full
+// node-1 with room on node-2, and atelet fails the detach. A new worker would
+// not help the actor, so it must not count toward ate.workerpool.demand.
+func TestResumeActor_FailedDetachStopsWaiting(t *testing.T) {
+	ctx := context.Background()
+	st := newTestPersistence(t)
+	actorRef := resources.ActorRef{Atespace: "team-a", Name: "id1"}
+
+	storetest.MustCreateAtespace(t, ctx, st, "ns")
+	if _, err := st.CreateActorTemplate(ctx, &ateapi.ActorTemplate{
+		Metadata:       &ateapi.ResourceMetadata{Atespace: "ns", Name: "tmpl1"},
+		SnapshotConfig: &ateapi.SnapshotConfig{StorageLocation: testStorageLocation},
+	}); err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	fillWorker(t, st, seedRuntimeWorker(t, ctx, st, "pod-1", "node-1", testSandboxRuntime()))
+	seedRuntimeWorker(t, ctx, st, "pod-2", "node-2", testSandboxRuntime())
+	snap := newPausedSnapshot(t, 1, ateapi.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY, "", "pause-snap-1", "node-1")
+	seedWorkflowActor(t, ctx, st, actorRef, "ns", "tmpl1", ateapi.ActorState_ACTOR_STATE_SUSPENDED, func(a *ateapi.Actor) {
+		a.Status.AssignedNode = "node-1"
+		a.Status.LastAssignedGeneration = 1
+		a.Status.Snapshots = []*ateapi.Snapshot{proto.CloneOf(snap)}
+	})
+	w, atelet := newDetachTestWorkflow(t, ctx, st)
+	w.instruments, _ = newTestInstruments(t)
+	atelet.detachErr = apierror.Unavailable("connection refused")
+
+	if _, _, err := w.ResumeActor(ctx, actorRef); apierror.Code(err) != codes.Unavailable {
+		t.Fatalf("ResumeActor = %v, want Unavailable", err)
+	}
+	if got := workflowDemand(t, w)["pool"]; got != 1 {
+		t.Errorf("%s = %v, want 1: the actor booked on node-1 and no waiting actor", workerpoolDemandMetric, got)
+	}
+}
+
 // TestResumeActor_NodeGoneWithPendingUpload resumes a suspended actor whose
 // node was deleted before atelet reported the upload of its latest snapshot.
 // Resume restores that snapshot from its upload on another node. When atelet

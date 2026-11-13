@@ -1,0 +1,83 @@
+# Copyright 2026 The Agent Substrate Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Scales the counter WorkerPool on two external metrics that
+# prometheus-adapter.yaml serves. The HPA computes a replica count from each
+# metric and takes the larger.
+#
+# ate_workerpool_utilization is the booked fraction of the pool, which the
+# adapter computes from the ate_worker_* series. As a Value target the HPA
+# asks for ceil(ready workers * utilization / 0.65), which keeps 35% of the
+# pool free. A full pool reads the same however many actors wait, so it grows
+# by about 1/0.65 each step.
+#
+# ate_workerpool_demand is the workers that the booked and the waiting actors
+# fill. While an actor waits it counts the pool as full, so the waiting actors
+# fill new workers. As an AverageValue target of 1 the HPA asks for
+# ceil(demand). Utilization keeps the headroom, so demand asks only for the
+# workers the actors need.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: counter
+  namespace: ate-demo-autoscaled-workerpool
+spec:
+  scaleTargetRef:
+    apiVersion: ate.dev/v1
+    kind: WorkerPool
+    name: counter
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+  - type: External
+    external:
+      metric:
+        name: ate_workerpool_utilization
+        selector:
+          matchLabels:
+            # Pool names are unique per namespace only, so select both.
+            ate_workerpool_namespace: ate-demo-autoscaled-workerpool
+            ate_workerpool_name: counter
+      target:
+        type: Value
+        value: 650m
+  - type: External
+    external:
+      metric:
+        name: ate_workerpool_demand
+        selector:
+          matchLabels:
+            ate_workerpool_namespace: ate-demo-autoscaled-workerpool
+            ate_workerpool_name: counter
+      target:
+        type: AverageValue
+        averageValue: "1"
+  behavior:
+    # The HPA skips a change while a metric is within a tolerance of its
+    # target, 10% by default. A waiting actor raises demand by only its share
+    # of a worker, so a larger pool hides it: a quarter-worker actor waiting
+    # on 4 workers reads 4.25 / 4, within 10%. Demand passes the size of the
+    # pool only while actors wait, so a tolerance of 0 adds no noise.
+    # Scale-down keeps the default.
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      tolerance: "0"
+    # A scale-down deletes worker pods without asking which hold actors, so
+    # keep it slow.
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 60

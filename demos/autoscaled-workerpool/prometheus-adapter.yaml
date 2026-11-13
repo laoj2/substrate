@@ -1,0 +1,262 @@
+# Copyright 2026 The Agent Substrate Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# prometheus-adapter serves the kind install's Prometheus
+# (manifests/ate-install/kind/prometheus.yaml) on the Kubernetes External
+# Metrics API (external.metrics.k8s.io), so an HPA can scale a WorkerPool on
+# the worker resource instruments and the demand gauge of ate-api-server. This is a standard install
+# (github.com/kubernetes-sigs/prometheus-adapter) trimmed to external metrics.
+#
+# Flow: ate-api-server:9090/metrics --scrape--> Prometheus --query--> adapter
+#       --external.metrics.k8s.io--> HPA --/scale--> WorkerPool -> Deployment.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-adapter
+  namespace: ate-demo-autoscaled-workerpool
+---
+# The adapter puts an HPA's metric.selector.matchLabels into
+# <<.LabelMatchers>>. Select both pool labels: the name alone matches every
+# pool of that name in the cluster.
+#
+# Every ate-api-server replica reports the whole fleet, so the queries reduce
+# the replicas to one value and never sum them.
+#
+# ate_workerpool_utilization is computed from the ate_worker_* series. For
+# each of actors, CPU and memory it divides the pool's allocated sum by its
+# capacity sum, and takes the largest. The inner max by worker drops the
+# replica copies. label_replace tags each resource, so the or keeps all three.
+#
+# ate_workerpool_demand includes only the actors that waited on each replica,
+# so the largest reading is the closest.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-adapter-config
+  namespace: ate-demo-autoscaled-workerpool
+data:
+  config.yaml: |
+    externalRules:
+    - seriesQuery: '{__name__="ate_worker_actors_capacity"}'
+      resources:
+        namespaced: false
+      name:
+        matches: "^.*$"
+        as: "ate_workerpool_utilization"
+      metricsQuery: >-
+        max by (ate_workerpool_namespace, ate_workerpool_name) (
+          label_replace(
+            sum by (ate_workerpool_namespace, ate_workerpool_name) (max by (ate_workerpool_namespace, ate_workerpool_name, ate_worker_name) (ate_worker_actors_allocated{<<.LabelMatchers>>}))
+            / sum by (ate_workerpool_namespace, ate_workerpool_name) (max by (ate_workerpool_namespace, ate_workerpool_name, ate_worker_name) (ate_worker_actors_capacity{<<.LabelMatchers>>})),
+            "resource", "actors", "", "")
+          or label_replace(
+            sum by (ate_workerpool_namespace, ate_workerpool_name) (max by (ate_workerpool_namespace, ate_workerpool_name, ate_worker_name) (ate_worker_cpu_allocated{<<.LabelMatchers>>}))
+            / sum by (ate_workerpool_namespace, ate_workerpool_name) (max by (ate_workerpool_namespace, ate_workerpool_name, ate_worker_name) (ate_worker_cpu_capacity{<<.LabelMatchers>>})),
+            "resource", "cpu", "", "")
+          or label_replace(
+            sum by (ate_workerpool_namespace, ate_workerpool_name) (max by (ate_workerpool_namespace, ate_workerpool_name, ate_worker_name) (ate_worker_memory_allocated_bytes{<<.LabelMatchers>>}))
+            / sum by (ate_workerpool_namespace, ate_workerpool_name) (max by (ate_workerpool_namespace, ate_workerpool_name, ate_worker_name) (ate_worker_memory_capacity_bytes{<<.LabelMatchers>>})),
+            "resource", "memory", "", "")
+        )
+    - seriesQuery: '{__name__="ate_workerpool_demand"}'
+      resources:
+        namespaced: false
+      name:
+        matches: "^(.*)$"
+        as: "$1"
+      metricsQuery: 'max(<<.Series>>{<<.LabelMatchers>>}) by (ate_workerpool_namespace, ate_workerpool_name)'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-adapter
+  namespace: ate-demo-autoscaled-workerpool
+  labels:
+    app: prometheus-adapter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus-adapter
+  template:
+    metadata:
+      labels:
+        app: prometheus-adapter
+    spec:
+      serviceAccountName: prometheus-adapter
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: prometheus-adapter
+        image: registry.k8s.io/prometheus-adapter/prometheus-adapter:v0.12.0@sha256:932eae60e2bcf9c4660d6442da066ef1a79b4ea7cc232c61c7303069216ca006
+        args:
+        - --secure-port=6443
+        - --cert-dir=/tmp/cert
+        - --prometheus-url=http://prometheus.otel-system.svc:9090/
+        - --metrics-relist-interval=30s
+        - --config=/etc/adapter/config.yaml
+        ports:
+        - name: https
+          containerPort: 6443
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: https
+            scheme: HTTPS
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 5
+        livenessProbe:
+          httpGet:
+            path: /livez
+            port: https
+            scheme: HTTPS
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: config
+          mountPath: /etc/adapter/
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-adapter-config
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-adapter
+  namespace: ate-demo-autoscaled-workerpool
+  labels:
+    app: prometheus-adapter
+spec:
+  type: ClusterIP
+  selector:
+    app: prometheus-adapter
+  ports:
+  - name: https
+    port: 443
+    targetPort: https
+---
+# Registers the adapter as the backend for external.metrics.k8s.io. A cluster
+# has one such APIService, so this replaces any other external metrics
+# adapter. insecureSkipTLSVerify suits a dev cluster: the adapter signs its
+# own serving certificate (--cert-dir).
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1beta1.external.metrics.k8s.io
+spec:
+  service:
+    name: prometheus-adapter
+    namespace: ate-demo-autoscaled-workerpool
+    port: 443
+  group: external.metrics.k8s.io
+  version: v1beta1
+  insecureSkipTLSVerify: true
+  groupPriorityMinimum: 100
+  versionPriority: 100
+---
+# Let the adapter authenticate/authorize incoming aggregated-API requests.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-adapter-auth-delegator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+- kind: ServiceAccount
+  name: prometheus-adapter
+  namespace: ate-demo-autoscaled-workerpool
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus-adapter-auth-reader
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+- kind: ServiceAccount
+  name: prometheus-adapter
+  namespace: ate-demo-autoscaled-workerpool
+---
+# The adapter discovers namespaces/pods/services to resolve metric associations.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-adapter-resource-reader
+rules:
+- apiGroups: [""]
+  resources: ["namespaces", "pods", "services", "configmaps"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-adapter-resource-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-adapter-resource-reader
+subjects:
+- kind: ServiceAccount
+  name: prometheus-adapter
+  namespace: ate-demo-autoscaled-workerpool
+---
+# Allow the built-in HPA controller to read external metrics from the aggregated API.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-adapter-external-metrics-reader
+rules:
+- apiGroups: ["external.metrics.k8s.io"]
+  resources: ["*"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hpa-controller-external-metrics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-adapter-external-metrics-reader
+subjects:
+- kind: ServiceAccount
+  name: horizontal-pod-autoscaler
+  namespace: kube-system

@@ -726,3 +726,182 @@ func TestWorkerResources(t *testing.T) {
 		})
 	}
 }
+
+func TestPoolDemand(t *testing.T) {
+	const gib = 1 << 30
+	capacity := &ateapi.WorkerResources{Actors: 10, CpuMillicores: 4000, MemoryBytes: 8 * gib}
+	booking := &ateapi.Resources{CpuMillicores: 1000, MemoryBytes: gib}
+	waiting := waitingActor{bookings: map[poolKey]*ateapi.Resources{{"ns-1", "pool-a"}: booking}}
+	inBothPools := waitingActor{bookings: map[poolKey]*ateapi.Resources{
+		{"ns-1", "pool-a"}: booking,
+		{"ns-1", "pool-b"}: booking,
+	}}
+	full := &ateapi.WorkerResources{Actors: 4, CpuMillicores: 4000, MemoryBytes: 4 * gib}
+	poolB := poolWorker(capacity, full)
+	poolB.WorkerPool = "pool-b"
+	draining := poolWorker(capacity, &ateapi.WorkerResources{Actors: 5, CpuMillicores: 2000})
+	draining.Status.State = ateapi.WorkerState_WORKER_STATE_DRAINING
+	unregistered := poolWorker(capacity, &ateapi.WorkerResources{})
+	unregistered.Status.RegisteredEpoch = 0
+
+	tests := []struct {
+		name    string
+		workers []*ateapi.Worker
+		waiting []waitingActor
+		want    map[poolKey]float64
+	}{
+		{
+			name: "the fullest resource sets the demand",
+			workers: []*ateapi.Worker{
+				poolWorker(capacity, &ateapi.WorkerResources{Actors: 2, CpuMillicores: 3000, MemoryBytes: 2 * gib}),
+				poolWorker(capacity, &ateapi.WorkerResources{Actors: 1, CpuMillicores: 1000, MemoryBytes: gib}),
+			},
+			want: map[poolKey]float64{{"ns-1", "pool-a"}: 1},
+		},
+		{
+			name: "waiting actors raise the demand above the size of a full pool",
+			workers: []*ateapi.Worker{
+				poolWorker(capacity, &ateapi.WorkerResources{Actors: 4, CpuMillicores: 4000, MemoryBytes: 4 * gib}),
+				poolWorker(capacity, &ateapi.WorkerResources{Actors: 4, CpuMillicores: 4000, MemoryBytes: 4 * gib}),
+			},
+			waiting: []waitingActor{waiting, waiting},
+			want:    map[poolKey]float64{{"ns-1", "pool-a"}: 2.5},
+		},
+		{
+			name: "a waiting actor fills a new worker while the pool has room in total",
+			workers: []*ateapi.Worker{
+				poolWorker(capacity, &ateapi.WorkerResources{Actors: 3, CpuMillicores: 1200, MemoryBytes: 2 * gib}),
+				poolWorker(capacity, &ateapi.WorkerResources{Actors: 3, CpuMillicores: 1200, MemoryBytes: 2 * gib}),
+			},
+			waiting: []waitingActor{{bookings: map[poolKey]*ateapi.Resources{
+				{"ns-1", "pool-a"}: {CpuMillicores: 3600, MemoryBytes: gib},
+			}}},
+			want: map[poolKey]float64{{"ns-1", "pool-a"}: 2.9},
+		},
+		{
+			name:    "an actor that can run in two pools counts in both",
+			workers: []*ateapi.Worker{poolWorker(capacity, full), poolB},
+			waiting: []waitingActor{inBothPools},
+			want: map[poolKey]float64{
+				{"ns-1", "pool-a"}: 1.25,
+				{"ns-1", "pool-b"}: 1.25,
+			},
+		},
+		{
+			name: "a resource the workers do not report is left out",
+			workers: []*ateapi.Worker{
+				poolWorker(&ateapi.WorkerResources{Actors: 4}, &ateapi.WorkerResources{Actors: 1}),
+			},
+			waiting: []waitingActor{waiting},
+			want:    map[poolKey]float64{{"ns-1", "pool-a"}: 1.25},
+		},
+		{
+			name: "bookings on a draining worker count against the other workers",
+			workers: []*ateapi.Worker{
+				poolWorker(capacity, &ateapi.WorkerResources{}),
+				draining,
+			},
+			want: map[poolKey]float64{{"ns-1", "pool-a"}: 0.5},
+		},
+		{
+			name:    "a pool with no worker that takes actors has no demand",
+			workers: []*ateapi.Worker{draining, unregistered},
+			waiting: []waitingActor{waiting},
+			want:    map[poolKey]float64{},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := poolDemand(tc.workers, tc.waiting)
+			if len(got) != len(tc.want) {
+				t.Fatalf("poolDemand() = %v, want %v", got, tc.want)
+			}
+			for key, want := range tc.want {
+				if got[key] != want {
+					t.Errorf("poolDemand()[%v] = %v, want %v", key, got[key], want)
+				}
+			}
+		})
+	}
+}
+
+func TestWaitingActorsSince(t *testing.T) {
+	start := time.Unix(1000, 0)
+	waiting := waitingActors{actors: make(map[string]waitingActor)}
+	waiting.add("old", waitingActor{at: start})
+	waiting.add("new", waitingActor{at: start.Add(5 * time.Second)})
+	waiting.add("placed", waitingActor{at: start.Add(6 * time.Second)})
+	waiting.remove("placed")
+
+	got := waiting.since(start.Add(time.Second))
+	if len(got) != 1 || !got[0].at.Equal(start.Add(5*time.Second)) {
+		t.Errorf("since() = %+v, want only the actor that found no room after the cutoff", got)
+	}
+	if got := waiting.since(start); len(got) != 1 {
+		t.Errorf("since() with an earlier cutoff = %+v, want the expired actor forgotten", got)
+	}
+}
+
+// newPoolDemandReader registers ate.workerpool.demand on a local ManualReader.
+func newPoolDemandReader(t *testing.T, workers func() ([]*ateapi.Worker, error), instruments *Instruments) *sdkmetric.ManualReader {
+	t.Helper()
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	if err := RegisterWorkerPoolDemand(mp.Meter("ateapi"), workers, instruments); err != nil {
+		t.Fatalf("RegisterWorkerPoolDemand: %v", err)
+	}
+	return reader
+}
+
+// poolDemandValue returns the one datapoint of ate.workerpool.demand and
+// asserts that it carries the pool identity and nothing else.
+func poolDemandValue(t *testing.T, reader *sdkmetric.ManualReader) float64 {
+	t.Helper()
+	m := mustMetric(t, reader, workerpoolDemandMetric)
+	if m.Unit != "{worker}" {
+		t.Errorf("unit = %q, want {worker}", m.Unit)
+	}
+	gauge, ok := m.Data.(metricdata.Gauge[float64])
+	if !ok {
+		t.Fatalf("data type = %T, want Gauge[float64]", m.Data)
+	}
+	if len(gauge.DataPoints) != 1 {
+		t.Fatalf("got %d datapoints, want 1", len(gauge.DataPoints))
+	}
+	dp := gauge.DataPoints[0]
+	want := attribute.NewSet(ateattr.WorkerPoolAttributes("ns-1", "pool-a")...)
+	if !dp.Attributes.Equals(&want) {
+		t.Errorf("attributes = %v, want %v", dp.Attributes.ToSlice(), want.ToSlice())
+	}
+	return dp.Value
+}
+
+func TestWorkerPoolDemandShape(t *testing.T) {
+	inst, _ := newTestInstruments(t)
+	workers := func() ([]*ateapi.Worker, error) {
+		full := &ateapi.WorkerResources{Actors: 4}
+		return []*ateapi.Worker{poolWorker(full, full)}, nil
+	}
+	reader := newPoolDemandReader(t, workers, inst)
+	inst.recordWaiting("actor-uid", map[poolKey]*ateapi.Resources{{"ns-1", "pool-a"}: {}})
+
+	if got := poolDemandValue(t, reader); got != 1.25 {
+		t.Errorf("%s = %v, want 1.25", workerpoolDemandMetric, got)
+	}
+	inst.clearWaiting("actor-uid")
+	if got := poolDemandValue(t, reader); got != 1 {
+		t.Errorf("%s after the actor got a worker = %v, want 1", workerpoolDemandMetric, got)
+	}
+}
+
+func TestWorkerPoolDemandSkipsWhenCacheNotReady(t *testing.T) {
+	inst, _ := newTestInstruments(t)
+	notReady := func() ([]*ateapi.Worker, error) {
+		return nil, context.DeadlineExceeded
+	}
+	reader := newPoolDemandReader(t, notReady, inst)
+
+	if _, ok := collectMetric(t, reader, workerpoolDemandMetric); ok {
+		t.Errorf("%s was collected, want no datapoints while cache not ready", workerpoolDemandMetric)
+	}
+}

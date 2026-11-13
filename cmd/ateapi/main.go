@@ -314,6 +314,9 @@ func main() {
 	if err != nil {
 		serverboot.Fatal(ctx, "Failed to create metric instruments", err)
 	}
+	if err := controlapi.RegisterWorkerPoolDemand(otel.Meter("ateapi"), workerCache.Workers, instruments); err != nil {
+		serverboot.Fatal(ctx, "Failed to register worker pool demand metric", err)
+	}
 
 	objectStorePluginConn, err := pluginsocket.Dial(*objectStorePluginSocket, pluginsocket.ReadyWait)
 	if err != nil {

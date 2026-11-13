@@ -107,6 +107,10 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 	if err != nil && shouldDetachFromNode(actor, err) {
 		var detached *ateapi.Actor
 		if detached, err = w.detachFromFullNode(leaseCtx, actorRef, actor, actorTemplate, err); err != nil {
+			if !errors.Is(err, errNoWorkerRoom) {
+				// Another worker has room, so a new one would not help.
+				w.instruments.clearWaiting(actor.GetMetadata().GetUid())
+			}
 			return nil, false, err
 		}
 		actor = detached
@@ -431,6 +435,7 @@ func (w *ActorWorkflow) assignWorkerAttempt(ctx context.Context, actorRef resour
 	if err != nil {
 		if errors.Is(err, scheduling.ErrNoCapacity) {
 			outcome = ateattr.SchedulerOutcomeNoCapacity
+			w.recordWaiting(actor, constraints)
 			return nil, nil, apierror.ResourceExhausted("%w", errNoWorkerRoom)
 		}
 		return nil, nil, err
@@ -518,8 +523,37 @@ func (w *ActorWorkflow) assignWorkerAttempt(ctx context.Context, actorRef resour
 	pool = bound.GetWorkerPool()
 	class = hardware.SandboxClass(bound.GetStatus())
 	outcome = ateattr.SchedulerOutcomeAssigned
+	w.instruments.clearWaiting(actor.GetMetadata().GetUid())
 	logActorStateChanged(ctx, storedActor, ateattr.OperationResume)
 	return storedActor, bound, nil
+}
+
+// recordWaiting counts an actor that found no room toward the demand of every
+// pool it can run in: each pool with a worker its constraints apply to. A new
+// worker can be on any node, so the node pin does not count.
+func (w *ActorWorkflow) recordWaiting(actor *ateapi.Actor, constraints scheduling.Constraints) {
+	if w.instruments == nil {
+		return
+	}
+	workers, err := w.workerCache.Workers()
+	if err != nil {
+		return
+	}
+	constraints.RequiredNodes = nil
+	bookings := make(map[poolKey]*ateapi.Resources)
+	for _, worker := range workers {
+		key := poolKey{worker.GetWorkerNamespace(), worker.GetWorkerPool()}
+		if _, ok := bookings[key]; ok || !w.scheduler.Applies(worker, constraints) {
+			continue
+		}
+		if booking, ok := scheduling.Booking(worker, constraints); ok {
+			bookings[key] = booking
+		}
+	}
+	if len(bookings) == 0 {
+		return
+	}
+	w.instruments.recordWaiting(actor.GetMetadata().GetUid(), bookings)
 }
 
 // errNoWorkerRoom reports that no worker has room for the Actor under its

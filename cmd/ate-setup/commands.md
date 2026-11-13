@@ -204,6 +204,7 @@ is absent); the other two are flags of the benchmark commands. See
 | `deploy demo sandbox` | An on-demand sandbox actor driven by the sandbox client |
 | `deploy demo multi-template` | Two ActorTemplates sharing one WorkerPool |
 | `deploy demo parking` | Actor parking and unparking on a small WorkerPool |
+| `deploy demo autoscaled-workerpool` | A WorkerPool scaled by an HPA on its utilization and demand (Kind only) |
 | `deploy demo claude-code-multiplex` | Several Claude Code agents multiplexed onto one WorkerPool (requires `ANTHROPIC_API_KEY`, `KO_DOCKER_REPO`) |
 
 Each has a matching `delete demo NAME`. Demo flags bind
